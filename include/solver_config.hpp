@@ -39,7 +39,8 @@ struct IPMSolverOptions {
 };
 
 struct ConstrainedSolverOptions: UnconstrainedSolverOptions {
-    IPMSolverOptions QP_subproblem_options; 
+    IPMSolverOptions QP_subproblem_options;
+    double constraint_tolerance;
 };
 
 struct LinearConstraints {
@@ -49,8 +50,8 @@ struct LinearConstraints {
     std::optional<Eigen::MatrixXd> C; // Coefficients for linear inequality constraints, dimension (q x n)
     std::optional<Eigen::VectorXd> d; // Constants for linear inequality constraints, dimension (q x 1)
 
-    bool hasEqualityConstraints() const { return A.has_value() && b.has_value(); }
-    bool hasInequalityConstraints() const { return C.has_value() && d.has_value(); }
+    bool hasEqualityConstraints() const { return A.has_value() && b.has_value() && A.value().rows() > 0 && b.value().rows() > 0; }
+    bool hasInequalityConstraints() const { return C.has_value() && d.has_value() && C.value().rows() > 0 && d.value().rows() > 0; }
 };
 
 // For Linear Programming: min f(x) = c^T*x
@@ -86,7 +87,7 @@ struct NonLinearConstraints {
     bool hasInequalityConstraints() const { return inequality_constraint_func.has_value(); }
 };
 
-//Use it for Gauss-Newton methods. The cost function is defined as f(x) = 0.5 * F(x)^T*F(x), where F(x) is a column vector of functions.
+//Use it for Gauss-Newton methods. The cost function is defined as f(x) = F(x)^T*F(x), where F(x) is a column vector of functions.
 struct LSProblem : public NonLinearConstraints {
     Eigen::VectorXd x0;
     ResidualFunc residual_func;

@@ -9,6 +9,8 @@
 #include "solvers/lp_solver.hpp"
 #include "solvers/constrained_solver.hpp"
 #include "direction_strategy.hpp"
+#include "generalization_method.hpp"
+#include "compute_gradient.hpp"
 
 #include <iostream>
 
@@ -87,6 +89,176 @@ TEST_CASE("BFGS first call returns the steepest-descent direction", "[direction]
     REQUIRE(d.isApprox(-g, 1e-12));
 }
 
+TEST_CASE("BFGS satisfies the secant equation when curvature is positive", "[direction][bfgs]")
+{
+    NLPProblem p;
+    p.x0 = VectorXd::Zero(2);
+
+    BFGSHessianApproximation approx(p);
+
+    VectorXd g0(2);
+    g0 << 0.0, 0.0;
+    VectorXd x0(2);
+    x0 << 0.0, 0.0;
+    approx.getApproximateHessian(g0, x0); // initialize H = I
+
+    VectorXd g1(2);
+    g1 << 0.5, 0.0;
+    VectorXd x1(2);
+    x1 << 1.0, 0.0;
+
+    MatrixXd H = approx.getApproximateHessian(g1, x1);
+    VectorXd s = x1 - x0;
+    VectorXd y = g1 - g0;
+
+    REQUIRE((H * s).isApprox(y, 1e-12));
+}
+
+TEST_CASE("BFGS stays symmetric positive-definite through a negative-curvature step", "[direction][bfgs]")
+{
+    NLPProblem p;
+    p.x0 = VectorXd::Zero(2);
+
+    BFGSHessianApproximation approx(p);
+
+    VectorXd g0(2);
+    g0 << 0.0, 0.0;
+    VectorXd x0(2);
+    x0 << 0.0, 0.0;
+    approx.getApproximateHessian(g0, x0);
+
+    VectorXd g1(2);
+    g1 << -0.5, 0.0;
+    VectorXd x1(2);
+    x1 << 1.0, 0.0;
+
+    MatrixXd H = approx.getApproximateHessian(g1, x1);
+
+    REQUIRE(H.isApprox(H.transpose(), 1e-12));
+
+    Eigen::LLT<Eigen::MatrixXd> llt;
+    llt.compute(H);
+    REQUIRE(llt.info() == Eigen::Success);
+}
+
+TEST_CASE("Gauss-Newton Hessian equals 2 * J^T J + sigma * I", "[direction][gauss_newton]")
+{
+    LSProblem p;
+    p.x0 = VectorXd::Zero(2);
+
+    MatrixXd J(2, 2);
+    J << 1.0, 0.0,
+         0.0, 2.0;
+
+    p.residual_func = [](const VectorXd&) {
+        return VectorXd::Zero(2);
+    };
+
+    p.gradient_residual_func = [J](const VectorXd&) {
+        return J.transpose();
+    };
+
+    GaussNewtonHessianApproximation approx(p);
+    MatrixXd H = approx.getApproximateHessian(VectorXd::Zero(2));
+
+    MatrixXd expected = 2.0 * J.transpose() * J + 1e-10 * MatrixXd::Identity(2, 2);
+    REQUIRE(H.isApprox(expected, 1e-12));
+}
+
+// =============================================================================
+//  Compute Gradient Function
+// =============================================================================
+TEST_CASE("compute_gradient NLProblem returns the correct gradient for a simple quadratic", "[gradient]")
+{
+    NLPProblem p; p.cost_func=[](auto&x){return x.squaredNorm();};
+    p.gradient_func=[](auto&x){return (2*x).eval();};
+    VectorXd x(2); x<<1,2;
+    VectorXd expected(2); expected<<2,4;
+    REQUIRE(p.hasGradient());
+    REQUIRE(compute_gradient(p,x).isApprox(expected, 1e-8));
+}
+
+TEST_CASE("compute_gradient throws if gradient_func is not provided", "[gradient]")
+{
+    NLPProblem p; p.cost_func=[](auto&x){return x.squaredNorm();};
+    VectorXd x(2); x<<1,2;
+    REQUIRE(!p.hasGradient());
+    REQUIRE_THROWS_AS(compute_gradient(p,x), std::runtime_error);
+}
+
+TEST_CASE("compute gradient for LS problem", "[gradient][ls]")
+{
+    // Objective: f(x) = F(x)ᵀ F(x) = 0.5 * ||r(x)||²
+    // where r(x) = [x₀ + 2*x₁ - 2, x₀² + x₁² - 1]ᵀ
+    //
+    // Thus F(x) = sqrt(0.5) * r(x)
+
+    LSProblem p;
+    p.residual_func = [](const VectorXd& x) -> VectorXd {
+        VectorXd F(2);
+        F[0] = std::sqrt(0.5) * (x[0] + 2.0 * x[1] - 2.0);
+        F[1] = std::sqrt(0.5) * (x[0] * x[0] + x[1] * x[1] - 1.0);
+        return F;
+    };
+
+    p.gradient_residual_func = [](const VectorXd& x) -> MatrixXd {
+        MatrixXd J(2, 2);
+        J(0, 0) = std::sqrt(0.5) * 1.0;
+        J(0, 1) = std::sqrt(0.5) * 2.0;
+        J(1, 0) = std::sqrt(0.5) * 2.0 * x[0];
+        J(1, 1) = std::sqrt(0.5) * 2.0 * x[1];
+        J.transposeInPlace();
+        return J;
+    };
+
+    const Eigen::Vector2d x(1.0, 2.0);
+    const Eigen::Vector2d expected(11.0, 22.0);
+
+    REQUIRE(p.hasGradientResidualFunc());
+    REQUIRE(compute_gradient(p, x).isApprox(expected, 1e-8));
+
+    const Eigen::Vector2d x_rand = 5.0 * Eigen::Vector2d::Random();
+}
+
+TEST_CASE("compute gradient for the same LS problem on 1000 random points", "[gradient][ls]")
+{
+    LSProblem p;
+    p.residual_func = [](const VectorXd& x) -> VectorXd {
+        VectorXd F(2);
+        F[0] = std::sqrt(0.5) * (x[0] + 2.0 * x[1] - 2.0);
+        F[1] = std::sqrt(0.5) * (x[0] * x[0] + x[1] * x[1] - 1.0);
+        return F;
+    };
+
+    p.gradient_residual_func = [](const VectorXd& x) -> MatrixXd {
+        MatrixXd J(2, 2);
+        J(0, 0) = std::sqrt(0.5) * 1.0;
+        J(0, 1) = std::sqrt(0.5) * 2.0;
+        J(1, 0) = std::sqrt(0.5) * 2.0 * x[0];
+        J(1, 1) = std::sqrt(0.5) * 2.0 * x[1];
+        J.transposeInPlace();
+        return J;
+    };
+
+    GradientFunc g_func = [](const VectorXd& x) -> VectorXd {
+        const double r0 = x[0] + 2.0 * x[1] - 2.0;
+        const double r1 = x[0] * x[0] + x[1] * x[1] - 1.0;
+
+        Eigen::Vector2d analytical_grad;
+        analytical_grad[0] = r0 + 2.0 * x[0] * r1;
+        analytical_grad[1] = 2.0 * r0 + 2.0 * x[1] * r1;
+        return analytical_grad;
+    };
+
+    REQUIRE(p.hasGradientResidualFunc());
+
+    for (int i = 0; i < 1000; ++i) {
+        const Eigen::Vector2d x = 10.0 * Eigen::Vector2d::Random();
+        const Eigen::Vector2d expected = g_func(x);
+        const Eigen::Vector2d computed = compute_gradient(p, x);
+        REQUIRE(computed.isApprox(expected, 1e-8));
+    }
+}
 // =============================================================================
 //  Unconstrained QP (direct solve)
 // =============================================================================
@@ -106,6 +278,8 @@ TEST_CASE("Unconstrained QP has the closed-form solution H x = -c", "[qp][uncons
     VectorXd expected(2); expected << 2.0, 3.0;   // x = [2, 3]
     REQUIRE(r.x.isApprox(expected, 1e-9));
     REQUIRE(r.summary.converged);
+    REQUIRE(r.lambda.size() == 0);
+    REQUIRE(r.mhu.size() == 0);
 }
 
 TEST_CASE("Equality-constrained QP matches the KKT solution", "[qp][equality]")
@@ -125,6 +299,13 @@ TEST_CASE("Equality-constrained QP matches the KKT solution", "[qp][equality]")
     VectorXd expected(2); expected << 1.0, 1.0;
     REQUIRE(r.x.isApprox(expected, 1e-8));
     REQUIRE(r.summary.converged);
+    REQUIRE(r.lambda.size() == qp.A.value().rows());
+    REQUIRE(r.mhu.size() == 0);
+
+    // Check feasibility: A*x + b == 0
+    if (qp.A.has_value() && qp.b.has_value()) {
+        REQUIRE(((*qp.A) * r.x + *qp.b).minCoeff() <= 1e-6);
+    }
 }
 
 TEST_CASE("Inequality-constrained QP: inactive constraints", "[qp][inequality]")
@@ -164,6 +345,8 @@ TEST_CASE("Inequality-constrained QP: inactive constraints", "[qp][inequality]")
     expected << 13.0/7.0, 4.0/7.0;
 
     REQUIRE(r.x.isApprox(expected, 1e-4));
+    REQUIRE(r.lambda.size() == 0);
+    REQUIRE(r.mhu.size() == qp.C.value().rows());
 
     // Check feasibility: C*x + d >= 0
     if (qp.C.has_value() && qp.d.has_value()) {
@@ -171,6 +354,44 @@ TEST_CASE("Inequality-constrained QP: inactive constraints", "[qp][inequality]")
     }
 }
 
+// =============================================================================
+//  Generalization Strategies
+// =============================================================================
+
+TEST_CASE("LineSearch: Armijo returns a step giving sufficient decrease", "[linesearch]") {
+    CostFunc f = [](const VectorXd& x){ return x.squaredNorm(); };   // grad = 2x
+    VectorXd x(1); x << 1.0;
+    VectorXd d(1); d << -1.0;                 // descent
+    double gTd = (2*x).dot(d);                // = -2
+    double a = compute_step_length(GlobalizationMethod::LineSearch, f, gTd, x, d);
+    REQUIRE(a > 0.0);
+    REQUIRE(f(x + a*d) <= f(x) + 1e-4 * a * gTd + 1e-12);   // Armijo holds at returned alpha
+}
+
+TEST_CASE("LineSearch: non-descent direction returns zero step", "[linesearch]") {
+    CostFunc f = [](const VectorXd& x){ return x.squaredNorm(); };
+    VectorXd x(1); x << 1.0;
+    VectorXd d(1); d << +1.0;                 // ascent
+    REQUIRE(compute_step_length(GlobalizationMethod::LineSearch, f, (2*x).dot(d), x, d) == 0.0);
+}
+
+TEST_CASE("LineSearch: full quadratic step accepted when alpha=1", "[linesearch]") {
+    CostFunc f = [](const VectorXd& x) { return x.squaredNorm(); };
+    VectorXd x(1); x << 2.0;
+    VectorXd d = -x;                            // d = -2.0 (exact step to minimum at 0)
+    double grad_dot_d = (2 * x).dot(d);        // Directional derivative: 2 * 2 * (-2) = -8.0
+
+    double alpha = compute_step_length(GlobalizationMethod::LineSearch, f, grad_dot_d, x, d);
+
+    REQUIRE(alpha == Catch::Approx(1.0));
+}
+
+TEST_CASE("Trust Region throws not implemented", "[trust_region]") {
+    CostFunc f = [](const VectorXd& x){ return x.squaredNorm(); };
+    VectorXd x(1); x << 1.0;
+    VectorXd d(1); d << -1.0;
+    REQUIRE_THROWS_AS(compute_step_length(GlobalizationMethod::TrustRegion, f, (2*x).dot(d), x, d), std::runtime_error);
+}
 // =============================================================================
 //  Unconstrained NLP solver
 // =============================================================================
@@ -191,7 +412,10 @@ TEST_CASE("Exact Newton solves a quadratic in one step", "[solver][newton]")
 
     REQUIRE(r.x.norm() < 1e-8);
     REQUIRE(r.summary.iterations <= 2);
-    
+
+    //Unconstrained so no lamba and mhu should return
+    REQUIRE(r.lambda.size() == 0);
+    REQUIRE(r.mhu.size() == 0);
 }
 
 TEST_CASE("BFGS converges on a strictly convex quadratic", "[solver][bfgs]")
@@ -224,7 +448,11 @@ TEST_CASE("BFGS converges on a strictly convex quadratic", "[solver][bfgs]")
     expected << 1.0/11.0, 7.0/11.0;
 
     REQUIRE(r.x.isApprox(expected, 1e-6));
-    REQUIRE(r.summary.final_cost < -0.68);
+    REQUIRE(std::abs(r.summary.final_cost - p.cost_func(expected)) < 1e-6);
+
+    //Unconstrained so no lamba and mhu should return
+    REQUIRE(r.lambda.size() == 0);
+    REQUIRE(r.mhu.size() == 0);
 }
 
 TEST_CASE("Gauss-Newton converges on an overdetermined nonlinear least-squares problem (m != n)",
@@ -282,6 +510,10 @@ TEST_CASE("Gauss-Newton converges on an overdetermined nonlinear least-squares p
     REQUIRE(r.summary.final_cost < 1e-12);
     REQUIRE(r.summary.final_gradient_norm < 1e-6);
     REQUIRE(r.summary.converged);
+
+    //Unconstrained so no lamba and mhu should return
+    REQUIRE(r.lambda.size() == 0);
+    REQUIRE(r.mhu.size() == 0);
 }
 
 // =============================================================================
@@ -333,6 +565,7 @@ static ConstrainedSolverOptions con_opts()
     o.gradient_tolerance   = 1e-7;
     o.step_tolerance       = 1e-12;
     o.function_tolerance   = 1e-14;
+    o.constraint_tolerance = 1e-6;
     // o.logger is already initialized with null logger by default
     o.QP_subproblem_options = ipm_opts();
     return o;

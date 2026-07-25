@@ -187,6 +187,9 @@ inline ConstrainedSolverOptions load_constrained_solver_options(
     opt.function_tolerance =
         j.value("function_tolerance", 1e-12);
 
+    opt.constraint_tolerance =
+        j.value("constraint_tolerance", 1e-6);
+
     opt.direction_method =
         parse_direction_method(
             j.value("direction_method",

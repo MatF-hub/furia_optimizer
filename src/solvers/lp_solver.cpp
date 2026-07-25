@@ -120,12 +120,21 @@ void LPSolver::general_LP_solver(Result& result)
             Eigen::VectorXd s_inv = s.cwiseInverse();
             Eigen::VectorXd s_inv2 = s_inv.cwiseAbs2();
 
+            const double rho_tol = 1e-8;   // Primal regularization (damps undetermined primal steps)
+            const double delta_tol = 1e-8; // Dual regularization (relaxes linearly dependent constraints)
+
             // 1. Compute LHS Hessian component: tau * C^T * diag(s)^-2 * C
             // Using .asDiagonal() avoids full matrix multiplication overhead
-            KKT.block(0, 0, n, n) = tau * C.transpose() * s_inv2.asDiagonal() * C;
+            // Add tiny diagonal regularization (1e-12) to prevent rank deficient KKT matrix
+            KKT.block(0, 0, n, n) = tau * C.transpose() * s_inv2.asDiagonal() * C + rho_tol * Eigen::MatrixXd::Identity(n, n);
+
+            // Bottom-right Dual Block: (+ delta * I)
+            if (m_eq > 0) {
+                KKT.block(n, n, m_eq, m_eq) = delta_tol * Eigen::MatrixXd::Identity(m_eq, m_eq);
+            }
 
             // 2. Compute RHS Residuals
-            Eigen::VectorXd dual_res = -c + A.transpose() * lambda + tau * C.transpose() * s_inv;
+            Eigen::VectorXd dual_res = - c + A.transpose() * lambda + tau * C.transpose() * s_inv;
             Eigen::VectorXd primal_res = -A * x - b;
 
             rhs.head(n) = dual_res;
@@ -175,19 +184,35 @@ void LPSolver::general_LP_solver(Result& result)
         ++outer;
     }
 
-    Eigen::VectorXd dual_stationary = c - A.transpose() * lambda;
+    Eigen::VectorXd s_final = Eigen::VectorXd::Zero(d.rows());
     Eigen::VectorXd mhu = Eigen::VectorXd::Zero(C.rows());
     if (C.rows() > 0) {
-        // Solve for mhu using least squares to handle potential rank deficiency
-        mhu = C.transpose().colPivHouseholderQr().solve(dual_stationary);
+        s_final = C * x + d;
+        if ((s_final.array() <= 0).any()) {
+            throw std::runtime_error("Final solution is not strictly feasible for inequality constraints.");
+        }
+        mhu = tau * s_final.cwiseInverse();
     }
+
+    double primal_residual = (m_eq > 0) ? (A * x + b).norm() : 0.0;
+
+    Eigen::VectorXd dual_residual_eq = c - A.transpose() * lambda;
+    if (C.rows() > 0) {
+        dual_residual_eq -= C.transpose() * mhu;
+    }
+    double dual_residual = dual_residual_eq.norm();
+
+    double duality_gap = (C.rows() > 0) ? s_final.dot(mhu) : 0.0;
+
     // Pack results
     result.x = x;
     result.lambda = lambda;
     result.mhu = mhu;
     result.summary.iterations = outer;
     result.summary.final_cost = cost_func_(result.x);
-    result.summary.converged = outer < max_outer;
+    result.summary.converged = (primal_residual < tol) && 
+                               (dual_residual < tol) && 
+                               (duality_gap < tol);
     if (!result.summary.converged) {
         result.summary.termination_reason = TerminationReason::MaxIterations;
     };

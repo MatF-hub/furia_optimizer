@@ -22,8 +22,8 @@ namespace furiaopt
     inline Eigen::VectorXd compute_gradient(const LSProblem& problem, const Eigen::VectorXd& x)
     {
         if (problem.hasGradientResidualFunc()){
-            Eigen::MatrixXd J = problem.gradient_residual_func.value()(x);
-            return 2 * J * problem.residual_func(x);
+            Eigen::MatrixXd Grad_F = problem.gradient_residual_func.value()(x);
+            return 2 * Grad_F * problem.residual_func(x);
         }
         else
         {

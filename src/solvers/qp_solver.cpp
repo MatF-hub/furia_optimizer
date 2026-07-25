@@ -3,6 +3,8 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
+#include <iostream> 
+
 inline std::string vec_to_string(const Eigen::VectorXd& v)
 {
     std::ostringstream oss;
@@ -73,6 +75,8 @@ void QPSolver::no_constraints_QP_solver(Result& result)
             throw std::runtime_error("Failed to solve quadratic problem: Hessian is not semi-positive definite");
         }
     }
+    result.lambda = Eigen::VectorXd::Zero(0);
+    result.mhu = Eigen::VectorXd::Zero(0);
     result.summary.final_cost = cost_func_(result.x);
     result.summary.iterations = 0;
     result.summary.converged = true;
@@ -92,16 +96,24 @@ void QPSolver::equality_constrained_QP_solver(Result& result)
     size_t n = c.rows();
     size_t m_eq = A.rows();
 
+    //Add regularization to the KKT matrix to improve stability
+    const double rho_tol = 1e-8;
+    const double delta_tol = 1e-8;
+
     Eigen::MatrixXd KKT(n + m_eq, n + m_eq);
     KKT.setZero();
-    KKT.block(0, 0, n, n) = H;
+    KKT.block(0, 0, n, n) = H + rho_tol * Eigen::MatrixXd::Identity(n, n);;
     KKT.block(0, n, n, m_eq) = -A.transpose();
     
     // To use LDLT, the matrix must be symmetric. By putting -A here, 
     // the system becomes perfectly symmetric. This is mathematically 
     // equivalent to multiplying the bottom row of your equation by -1:
     // -Ax = b  =>  which perfectly matches the RHS below!
-    KKT.block(n, 0, m_eq, n) = -A; 
+    KKT.block(n, 0, m_eq, n) = -A;
+
+    if (m_eq > 0) {
+        KKT.block(n, n, m_eq, m_eq) = -delta_tol * Eigen::MatrixXd::Identity(m_eq, m_eq);
+    }
 
     Eigen::VectorXd rhs(n + m_eq);
     rhs.head(n) = -c;
@@ -117,6 +129,12 @@ void QPSolver::equality_constrained_QP_solver(Result& result)
 
     Eigen::VectorXd solution = ldlt.solve(rhs);
     result.x = solution.head(n);
+    if (m_eq > 0) {
+        result.lambda = solution.tail(m_eq);
+    } else {
+        result.lambda = Eigen::VectorXd::Zero(0);
+    }
+    result.mhu = Eigen::VectorXd::Zero(0);
     result.summary.final_cost = cost_func_(result.x);
     result.summary.iterations = 1; // Direct solve
     result.summary.converged = true;
@@ -195,8 +213,17 @@ void QPSolver::general_QP_solver(Result& result)
             Eigen::VectorXd s_inv = s.cwiseInverse();
             Eigen::VectorXd s_inv2 = s_inv.cwiseAbs2();
 
+            const double rho_tol = 1e-8;   // Primal regularization (damps undetermined primal steps)
+            const double delta_tol = 1e-8; // Dual regularization (relaxes linearly dependent constraints)
+
             // 1. Build Left-Hand Side (LHS) Block: H + tau * C^T * diag(s)^-2 * C
-            KKT.block(0, 0, n, n) = H + tau * C.transpose() * s_inv2.asDiagonal() * C;
+            // Add tiny diagonal regularization (1e-12) to prevent rank deficient KKT matrix
+            KKT.block(0, 0, n, n) = H + tau * C.transpose() * s_inv2.asDiagonal() * C + rho_tol * Eigen::MatrixXd::Identity(n, n);
+
+            // Bottom-right Dual Block: (+ delta * I)
+            if (m_eq > 0) {
+                KKT.block(n, n, m_eq, m_eq) = delta_tol * Eigen::MatrixXd::Identity(m_eq, m_eq);
+            }
 
             // 2. Build Right-Hand Side (RHS) Residual Vectors
             Eigen::VectorXd dual_res = -c - H * x + A.transpose() * lambda + tau * C.transpose() * s_inv;
@@ -250,19 +277,35 @@ void QPSolver::general_QP_solver(Result& result)
         ++outer;
     }
 
-    Eigen::VectorXd dual_stationary = H * x + c - A.transpose() * lambda;
+    Eigen::VectorXd s_final = Eigen::VectorXd::Zero(d.rows());
     Eigen::VectorXd mhu = Eigen::VectorXd::Zero(C.rows());
     if (C.rows() > 0) {
-        // Solve for mhu using least squares to handle potential rank deficiency
-        mhu = C.transpose().colPivHouseholderQr().solve(dual_stationary);
-    }    
+        s_final = C * x + d;
+        if ((s_final.array() <= 0).any()) {
+            throw std::runtime_error("Final solution is not strictly feasible for inequality constraints.");
+        }
+        mhu = tau * s_final.cwiseInverse();
+    }
+
+    double primal_residual = (m_eq > 0) ? (A * x + b).norm() : 0.0;
+
+    Eigen::VectorXd dual_residual_eq = c - A.transpose() * lambda;
+    if (C.rows() > 0) {
+        dual_residual_eq -= C.transpose() * mhu;
+    }
+    double dual_residual = dual_residual_eq.norm();
+
+    double duality_gap = (C.rows() > 0) ? s_final.dot(mhu) : 0.0;  
+    
     // Wrap results
     result.x = x;
     result.lambda = lambda;
     result.mhu = mhu;
     result.summary.iterations = outer;
     result.summary.final_cost = cost_func_(result.x);
-    result.summary.converged = outer < max_outer;
+    result.summary.converged = (primal_residual < tol) && 
+                               (dual_residual < tol) && 
+                               (duality_gap < tol);
     if (!result.summary.converged) {
         result.summary.termination_reason = TerminationReason::MaxIterations;
     };

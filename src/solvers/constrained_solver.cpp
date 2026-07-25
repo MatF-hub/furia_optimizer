@@ -5,6 +5,8 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
+#include <iostream>
+
 inline std::string vec_to_string(const Eigen::VectorXd& v)
 {
     std::ostringstream oss;
@@ -168,18 +170,19 @@ Result ConstrainedSolver::solve(){
         Eq_qp_problem.b = equality_constraint_func_(x_i);
         Eq_qp_problem.C = grad_ineq.transpose();
         Eq_qp_problem.d = inequality_constraint_func_(x_i);
+        Eq_qp_problem.x0 = x_i; // Use the current iterate as the initial guess for the QP solver
 
         QPSolver solver(options_.get().QP_subproblem_options, Eq_qp_problem);
 
-        Result result = solver.solve();
+        Result QP_result = solver.solve();
 
-        Eigen::VectorXd p_i = result.x;
-        Eigen::VectorXd D_lambda_i = result.lambda - lambda_i;
-        Eigen::VectorXd D_mhu_i = result.mhu - mhu_i;
+        Eigen::VectorXd p_i = QP_result.x;
+        Eigen::VectorXd D_lambda_i = QP_result.lambda - lambda_i;
+        Eigen::VectorXd D_mhu_i = QP_result.mhu - mhu_i;
         
         if ((grad_lagrangian.transpose()*p_i).norm() < options_.get().gradient_tolerance) {
-            result.summary.converged = true;
-            result.summary.termination_reason = TerminationReason::GradientTolerance;
+            QP_result.summary.converged = true;
+            QP_result.summary.termination_reason = TerminationReason::GradientTolerance;
             break;
         }
 
@@ -225,8 +228,12 @@ Result ConstrainedSolver::solve(){
     result.x = x_i;
     result.lambda = lambda_i;
     result.mhu = mhu_i;
-    bool eq_constraint_satisfied = equality_constraint_func_(x_i).lpNorm<Eigen::Infinity>() <= options_.get().function_tolerance; //Here should go constraint tolerance
-    bool inequality_constraint_satisfied = inequality_constraint_func_(x_i).lpNorm<Eigen::Infinity>() <= options_.get().function_tolerance; //Here should go constraint tolerance
+    bool eq_constraint_satisfied = 
+        equality_constraint_func_(x_i).size() == 0 ||
+        equality_constraint_func_(x_i).lpNorm<Eigen::Infinity>() <= options_.get().constraint_tolerance; //Here should go constraint tolerance
+    bool inequality_constraint_satisfied =
+        inequality_constraint_func_(x_i).size() == 0 ||
+        inequality_constraint_func_(x_i).minCoeff() >= - options_.get().constraint_tolerance;
     result.summary.converged = iter < options_.get().max_iter && eq_constraint_satisfied && inequality_constraint_satisfied;
     if (!result.summary.converged)
     {

@@ -4,6 +4,8 @@
   "step_tolerance": 1e-10,
   "function_tolerance": 1e-12,
 
+  "constraint_tolerance": 1e-6,
+
   "direction_method": "GradientDescent",
   "globalization_method": "LineSearch",
 
