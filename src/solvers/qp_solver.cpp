@@ -239,13 +239,6 @@ void QPSolver::general_QP_solver(Result& result)
 
             // 3. Robust Direct Matrix Solve using Column-Pivoted Householder QR
             auto qr = KKT.colPivHouseholderQr();
-
-            if (qr.rank() < KKT.rows())
-            {
-                logger_->error("KKT matrix is rank deficient. IPM cannot proceed.");
-                throw std::runtime_error("KKT matrix is rank deficient. IPM cannot proceed.");
-            }
-
             Eigen::VectorXd delta = qr.solve(rhs);
             
             Eigen::VectorXd dx = delta.head(n);

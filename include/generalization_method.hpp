@@ -73,7 +73,7 @@ inline double compute_step_length(const GlobalizationMethod& globalization_metho
                                   const Eigen::VectorXd& tau)
 {
     // Create l1-norm merit function 
-    CostFunc l1_norm_merit = [&](const Eigen::VectorXd& x) {
+    CostFunc l1_norm_merit = [&](const Eigen::VectorXd& x) -> double {
         Eigen::VectorXd abs_grad = g(x).cwiseAbs();
         Eigen::VectorXd result = (-h(x).array()).max(0.0);
         return f(x) + sigma.dot(abs_grad) + tau.dot(result);

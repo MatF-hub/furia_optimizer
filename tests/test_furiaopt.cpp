@@ -63,9 +63,9 @@ TEST_CASE("ExactHessianDirection evaluates Hessian at current x_i", "[direction]
     NLPProblem p;
     p.x0 = VectorXd::Constant(1, 0.0);
     const double target = 3.0;
-    p.cost_func     = [target](const VectorXd& x){ return 0.5 * (x[0]-target)*(x[0]-target); };
-    p.gradient_func = [target](const VectorXd& x){ VectorXd g(1); g[0]=x[0]-target; return g; };
-    p.hessian_func  = [](const VectorXd&){ return MatrixXd::Identity(1,1); };
+    p.cost_func     = [target](const VectorXd& x) -> double { return 0.5 * (x[0]-target)*(x[0]-target); };
+    p.gradient_func = [target](const VectorXd& x) -> VectorXd { VectorXd g(1); g[0]=x[0]-target; return g; };
+    p.hessian_func  = [](const VectorXd&) -> MatrixXd { return MatrixXd::Identity(1,1); };
 
     ExactHessianDirection strat(p);
     VectorXd x_i(1); 
@@ -80,8 +80,8 @@ TEST_CASE("BFGS first call returns the steepest-descent direction", "[direction]
 {
     NLPProblem p;
     p.x0 = VectorXd::Zero(2);
-    p.cost_func     = [](const VectorXd& x){ return x.squaredNorm(); };
-    p.gradient_func = [](const VectorXd& x){ return (2*x).eval(); };
+    p.cost_func     = [](const VectorXd& x) -> double { return x.squaredNorm(); };
+    p.gradient_func = [](const VectorXd& x) -> VectorXd { return (2*x).eval(); };
     BFGSDirection strat(p);
     VectorXd g(2); 
     g << 2.0, 4.0;
@@ -150,11 +150,11 @@ TEST_CASE("Gauss-Newton Hessian equals 2 * J^T J + sigma * I", "[direction][gaus
     J << 1.0, 0.0,
          0.0, 2.0;
 
-    p.residual_func = [](const VectorXd&) {
+    p.residual_func = [](const VectorXd&) -> VectorXd {
         return VectorXd::Zero(2);
     };
 
-    p.gradient_residual_func = [J](const VectorXd&) {
+    p.gradient_residual_func = [J](const VectorXd&) -> MatrixXd {
         return J.transpose();
     };
 
@@ -165,13 +165,25 @@ TEST_CASE("Gauss-Newton Hessian equals 2 * J^T J + sigma * I", "[direction][gaus
     REQUIRE(H.isApprox(expected, 1e-12));
 }
 
+TEST_CASE("ExactNewton direction without Hessian function throws invalid_argument", "[guards]") {
+    UnconstrainedSolverOptions opts = nlp_opts(DirectionMethod::ExactNewton);
+    
+    NLPProblem p;
+    p.x0 = VectorXd::Zero(2);
+    p.cost_func = [](const VectorXd& x) -> double { return x.squaredNorm(); };
+    p.gradient_func = [](const VectorXd& x) -> Eigen::VectorXd { return 2.0 * x; };
+
+    REQUIRE_THROWS_AS(UnconstrainedSolver(opts, p), std::invalid_argument);
+}
+
+
 // =============================================================================
 //  Compute Gradient Function
 // =============================================================================
 TEST_CASE("compute_gradient NLProblem returns the correct gradient for a simple quadratic", "[gradient]")
 {
-    NLPProblem p; p.cost_func=[](auto&x){return x.squaredNorm();};
-    p.gradient_func=[](auto&x){return (2*x).eval();};
+    NLPProblem p; p.cost_func=[](auto&x) -> double { return x.squaredNorm(); };
+    p.gradient_func=[](auto&x) -> VectorXd { return (2*x).eval(); };
     VectorXd x(2); x<<1,2;
     VectorXd expected(2); expected<<2,4;
     REQUIRE(p.hasGradient());
@@ -180,7 +192,7 @@ TEST_CASE("compute_gradient NLProblem returns the correct gradient for a simple 
 
 TEST_CASE("compute_gradient throws if gradient_func is not provided", "[gradient]")
 {
-    NLPProblem p; p.cost_func=[](auto&x){return x.squaredNorm();};
+    NLPProblem p; p.cost_func=[](auto&x) -> double { return x.squaredNorm(); };
     VectorXd x(2); x<<1,2;
     REQUIRE(!p.hasGradient());
     REQUIRE_THROWS_AS(compute_gradient(p,x), std::runtime_error);
@@ -359,7 +371,7 @@ TEST_CASE("Inequality-constrained QP: inactive constraints", "[qp][inequality]")
 // =============================================================================
 
 TEST_CASE("LineSearch: Armijo returns a step giving sufficient decrease", "[linesearch]") {
-    CostFunc f = [](const VectorXd& x){ return x.squaredNorm(); };   // grad = 2x
+    CostFunc f = [](const VectorXd& x) -> double { return x.squaredNorm(); };   // grad = 2x
     VectorXd x(1); x << 1.0;
     VectorXd d(1); d << -1.0;                 // descent
     double gTd = (2*x).dot(d);                // = -2
@@ -369,14 +381,14 @@ TEST_CASE("LineSearch: Armijo returns a step giving sufficient decrease", "[line
 }
 
 TEST_CASE("LineSearch: non-descent direction returns zero step", "[linesearch]") {
-    CostFunc f = [](const VectorXd& x){ return x.squaredNorm(); };
+    CostFunc f = [](const VectorXd& x) -> double { return x.squaredNorm(); };
     VectorXd x(1); x << 1.0;
     VectorXd d(1); d << +1.0;                 // ascent
     REQUIRE(compute_step_length(GlobalizationMethod::LineSearch, f, (2*x).dot(d), x, d) == 0.0);
 }
 
 TEST_CASE("LineSearch: full quadratic step accepted when alpha=1", "[linesearch]") {
-    CostFunc f = [](const VectorXd& x) { return x.squaredNorm(); };
+    CostFunc f = [](const VectorXd& x) -> double { return x.squaredNorm(); };
     VectorXd x(1); x << 2.0;
     VectorXd d = -x;                            // d = -2.0 (exact step to minimum at 0)
     double grad_dot_d = (2 * x).dot(d);        // Directional derivative: 2 * 2 * (-2) = -8.0
@@ -387,11 +399,30 @@ TEST_CASE("LineSearch: full quadratic step accepted when alpha=1", "[linesearch]
 }
 
 TEST_CASE("Trust Region throws not implemented", "[trust_region]") {
-    CostFunc f = [](const VectorXd& x){ return x.squaredNorm(); };
+    CostFunc f = [](const VectorXd& x) -> double { return x.squaredNorm(); };
     VectorXd x(1); x << 1.0;
     VectorXd d(1); d << -1.0;
     REQUIRE_THROWS_AS(compute_step_length(GlobalizationMethod::TrustRegion, f, (2*x).dot(d), x, d), std::runtime_error);
 }
+
+TEST_CASE("Merit Function: L1 merit function decreases along search direction", "[linesearch][merit]") {
+    CostFunc f = [](const VectorXd& x) -> double { return x[0] * x[0] + x[1] * x[1]; };
+    EqualityConstraintFunc c_eq = [](const VectorXd& x) -> VectorXd { VectorXd c(1); c[0] = x[0] + x[1] - 2.0; return c; };
+    InequalityConstraintFunc c_ineq = [](const VectorXd& x) -> VectorXd { VectorXd c(1); c[0] = x[0]; return c; };
+    GradientFunc g_f = [](const VectorXd& x) -> Eigen::VectorXd { return 2.0 * x; };
+    GradientInequalityConstraintFunc g_ineq = [](const VectorXd&) -> MatrixXd { MatrixXd J(2,1); J << 1.0, 0.0; return J; };
+
+    VectorXd x(2); x << 0.5, 0.5;
+    VectorXd d(2); d << 0.5, 0.5;
+    Eigen::VectorXd sigma(1); sigma << 10.0;
+    Eigen::VectorXd tau(1); tau << 10.0;
+
+    double alpha = compute_step_length(
+        GlobalizationMethod::LineSearch, f, c_eq, c_ineq, g_f, g_ineq, x, d, sigma, tau
+    );
+    REQUIRE(alpha > 0.0);
+}
+
 // =============================================================================
 //  Unconstrained NLP solver
 // =============================================================================
@@ -402,9 +433,9 @@ TEST_CASE("Exact Newton solves a quadratic in one step", "[solver][newton]")
     p.x0 = (VectorXd(2) << 5.0, -4.0).finished();
     Eigen::Matrix2d H; 
     H << 2,0, 0,3;
-    p.cost_func     = [H](const VectorXd& x){ return 0.5 * x.transpose() * H * x; };
-    p.gradient_func = [H](const VectorXd& x){ return (H * x).eval(); };
-    p.hessian_func  = [H](const VectorXd&){ return MatrixXd(H); };
+    p.cost_func     = [H](const VectorXd& x) -> double { return 0.5 * x.transpose() * H * x; };
+    p.gradient_func = [H](const VectorXd& x) -> VectorXd { return (H * x).eval(); };
+    p.hessian_func  = [H](const VectorXd&) -> MatrixXd { return MatrixXd(H); };
     
     auto o = nlp_opts(DirectionMethod::ExactNewton);
     UnconstrainedSolver s(o, p);
@@ -436,9 +467,9 @@ TEST_CASE("BFGS converges on a strictly convex quadratic", "[solver][bfgs]")
     H << 4, 1, 1, 3;
     Eigen::Vector2d c;
     c << -1, -2;
-    p.cost_func = [H,c](const VectorXd& x) { return 0.5 * x.dot(H * x) + c.dot(x); };
+    p.cost_func = [H,c](const VectorXd& x) -> double { return 0.5 * x.dot(H * x) + c.dot(x); };
 
-    p.gradient_func = [H,c](const VectorXd& x) { return H * x + c; };
+    p.gradient_func = [H,c](const VectorXd& x) -> VectorXd { return H * x + c; };
 
     auto options = nlp_opts(DirectionMethod::BFGS, 100);
     UnconstrainedSolver s(options, p);
@@ -479,7 +510,7 @@ TEST_CASE("Gauss-Newton converges on an overdetermined nonlinear least-squares p
     LSProblem p;
     p.x0 = (VectorXd(2) << -2.0, 5.0).finished();
 
-    p.residual_func = [](const VectorXd& x) {
+    p.residual_func = [](const VectorXd& x) -> Eigen::VectorXd {
         VectorXd r(3);
         r[0] = x[0] - 1.0;
         r[1] = x[1] - 2.0;
@@ -487,7 +518,7 @@ TEST_CASE("Gauss-Newton converges on an overdetermined nonlinear least-squares p
         return r;
     };
 
-    p.gradient_residual_func = [](const VectorXd&) {
+    p.gradient_residual_func = [](const VectorXd&) -> Eigen::MatrixXd {
         // Transposed gradient Jᵀ (n x m) of the residual vector F(x):
         //
         // Jᵀ =
@@ -525,8 +556,8 @@ TEST_CASE("Gradient-norm termination reports GradientTolerance", "[solver][termi
     // must leave final ||g|| <= gradient_tolerance (not ||g||^2).
     NLPProblem p;
     p.x0 = (VectorXd(2) << 3.0, -2.0).finished();
-    p.cost_func     = [](const VectorXd& x){ return x.squaredNorm(); };
-    p.gradient_func = [](const VectorXd& x){ return (2*x).eval(); };
+    p.cost_func     = [](const VectorXd& x) -> double { return x.squaredNorm(); };
+    p.gradient_func = [](const VectorXd& x) -> VectorXd { return (2*x).eval(); };
 
     auto o = nlp_opts(DirectionMethod::GradientDescent);
     o.gradient_tolerance = 1e-6;
@@ -544,13 +575,28 @@ TEST_CASE("Function-tolerance check measures relative COST CHANGE", "[solver][te
     // f(x) = (x-2)^2 + 10  (optimum cost = 10, far from 0).
     NLPProblem p;
     p.x0 = VectorXd::Constant(1, 5.0);
-    p.cost_func     = [](const VectorXd& x){ return (x[0]-2)*(x[0]-2) + 10.0; };
-    p.gradient_func = [](const VectorXd& x){ VectorXd g(1); g[0]=2*(x[0]-2); return g; };
+    p.cost_func     = [](const VectorXd& x) -> double { return (x[0]-2)*(x[0]-2) + 10.0; };
+    p.gradient_func = [](const VectorXd& x) -> Eigen::VectorXd { VectorXd g(1); g[0]=2*(x[0]-2); return g; };
 
     auto o = nlp_opts(DirectionMethod::GradientDescent, 100000);
     UnconstrainedSolver s(o, p);
     Result r = s.solve();
     REQUIRE(r.x[0] == Approx(2.0).margin(1e-3));   // must reach the true minimiser
+}
+
+TEST_CASE("Termination reasons are correctly reported for max iterations and tolerances", "[termination]") {
+    UnconstrainedSolverOptions opts = nlp_opts(DirectionMethod::GradientDescent, 1);
+    opts.gradient_tolerance = 1e-99;
+    
+    NLPProblem p;
+    p.x0 = (VectorXd(2) << 10.0, 10.0).finished();
+    p.cost_func = [](const VectorXd& x) -> double { return x.squaredNorm(); };
+    p.gradient_func = [](const VectorXd& x) -> Eigen::VectorXd { return 2.0 * x; };
+
+    UnconstrainedSolver solver(opts, p);
+    Result r = solver.solve();
+    REQUIRE(!r.summary.converged);
+    REQUIRE(r.summary.termination_reason == TerminationReason::MaxIterations);
 }
 
 // =============================================================================
@@ -589,21 +635,21 @@ TEST_CASE("SQP: quadratic objective with linear equality constraint", "[sqp][equ
 
     p.x0 = (VectorXd(2) << 0.0, 0.0).finished();
 
-    p.cost_func = [](const VectorXd& x) {
+    p.cost_func = [](const VectorXd& x) -> double {
         return 0.5 * x.squaredNorm();
     };
 
-    p.gradient_func = [](const VectorXd& x) {
+    p.gradient_func = [](const VectorXd& x) -> VectorXd {
         return x;
     };
 
-    p.equality_constraint_func = [](const VectorXd& x) {
+    p.equality_constraint_func = [](const VectorXd& x) -> VectorXd {
         VectorXd c(1);
         c[0] = x[0] + x[1] - 2.0;
         return c;
     };
 
-    p.gradient_equality_constraint_func = [](const VectorXd&) {
+    p.gradient_equality_constraint_func = [](const VectorXd&) -> MatrixXd {
         MatrixXd JT(2,1);
         JT << 1.0,
              1.0;
@@ -617,7 +663,12 @@ TEST_CASE("SQP: quadratic objective with linear equality constraint", "[sqp][equ
     VectorXd expected(2);
     expected << 1.0, 1.0;
     
-    CAPTURE(r.summary.iterations, r.summary.final_cost, r.x.transpose());
+    CAPTURE(r.x);
+    CAPTURE(expected);
+    CAPTURE(r.summary.converged);
+    CAPTURE(r.summary.termination_reason);
+    CAPTURE(r.summary.iterations);
+
     REQUIRE(r.x.isApprox(expected, 1e-6));
     
 }
@@ -642,24 +693,24 @@ TEST_CASE("SQP: quadratic objective with active inequality constraint", "[sqp][i
 
     p.x0 = (VectorXd(2) << 0.0, 0.0).finished();
 
-    p.cost_func = [](const VectorXd& x) {
+    p.cost_func = [](const VectorXd& x) -> double {
         return 0.5 * ((x[0]-2)*(x[0]-2) +
                       (x[1]-2)*(x[1]-2));
     };
 
-    p.gradient_func = [](const VectorXd& x) {
+    p.gradient_func = [](const VectorXd& x) -> VectorXd {
         VectorXd g(2);
         g << x[0]-2, x[1]-2;
         return g;
     };
 
-    p.inequality_constraint_func = [](const VectorXd& x) {
+    p.inequality_constraint_func = [](const VectorXd& x) -> VectorXd {
         VectorXd c(1);
         c[0] = 2.0 - x[0] - x[1];
         return c;
     };
 
-    p.gradient_inequality_constraint_func = [](const VectorXd&) {
+    p.gradient_inequality_constraint_func = [](const VectorXd&) -> MatrixXd {
         MatrixXd JT(2,1);
         JT << -1.0,
              -1.0;
@@ -672,6 +723,12 @@ TEST_CASE("SQP: quadratic objective with active inequality constraint", "[sqp][i
 
     VectorXd expected(2);
     expected << 1.0, 1.0;
+
+    CAPTURE(r.x);
+    CAPTURE(expected);
+    CAPTURE(r.summary.converged);
+    CAPTURE(r.summary.termination_reason);
+    CAPTURE(r.summary.iterations);
 
     REQUIRE(r.x.isApprox(expected, 1e-5));
 }
@@ -693,23 +750,23 @@ TEST_CASE("SQP: nonlinear equality constraint circle", "[sqp][nonlinear]")
 
     p.x0 = (VectorXd(2) << 0.8, 0.2).finished();
 
-    p.cost_func = [](const VectorXd& x) {
+    p.cost_func = [](const VectorXd& x) -> double {
         return x[0] + x[1];
     };
 
-    p.gradient_func = [](const VectorXd&) {
+    p.gradient_func = [](const VectorXd&) -> VectorXd {
         VectorXd g(2);
         g << 1.0, 1.0;
         return g;
     };
 
-    p.equality_constraint_func = [](const VectorXd& x) {
+    p.equality_constraint_func = [](const VectorXd& x) -> VectorXd {
         VectorXd c(1);
         c[0] = x[0]*x[0] + x[1]*x[1] - 1.0;
         return c;
     };
 
-    p.gradient_equality_constraint_func = [](const VectorXd& x) {
+    p.gradient_equality_constraint_func = [](const VectorXd& x) -> MatrixXd {
         MatrixXd JT(2,1);
         JT << 2*x[0], 2*x[1];
         return JT;
@@ -724,6 +781,7 @@ TEST_CASE("SQP: nonlinear equality constraint circle", "[sqp][nonlinear]")
                 -std::sqrt(2)/2;
 
     CAPTURE(r.x);
+    CAPTURE(expected);
     CAPTURE(r.summary.converged);
     CAPTURE(r.summary.termination_reason);
     CAPTURE(r.summary.iterations);
@@ -748,38 +806,38 @@ TEST_CASE("SQP: nonlinear equality with active inequality", "[sqp][mixed]")
 
     p.x0 = (VectorXd(2) << 0.2, 0.9).finished();
 
-    p.cost_func = [](const VectorXd& x) {
+    p.cost_func = [](const VectorXd& x) -> double {
         return (x[0]-1)*(x[0]-1) +
                (x[1]-1)*(x[1]-1);
     };
 
-    p.gradient_func = [](const VectorXd& x) {
+    p.gradient_func = [](const VectorXd& x) -> VectorXd {
         VectorXd g(2);
         g << 2*(x[0]-1),
              2*(x[1]-1);
         return g;
     };
 
-    p.equality_constraint_func = [](const VectorXd& x) {
+    p.equality_constraint_func = [](const VectorXd& x) -> VectorXd {
         VectorXd c(1);
         c[0] = x.squaredNorm() - 1.0;
         return c;
     };
 
-    p.gradient_equality_constraint_func = [](const VectorXd& x) {
+    p.gradient_equality_constraint_func = [](const VectorXd& x) -> MatrixXd {
         MatrixXd JT(2,1);
         JT << 2*x[0],
              2*x[1];
         return JT;
     };
 
-    p.inequality_constraint_func = [](const VectorXd& x) {
+    p.inequality_constraint_func = [](const VectorXd& x) -> VectorXd {
         VectorXd c(1);
         c[0] = x[0];
         return c;
     };
 
-    p.gradient_inequality_constraint_func = [](const VectorXd&) {
+    p.gradient_inequality_constraint_func = [](const VectorXd&) -> MatrixXd {
         MatrixXd JT(2,1);
         JT << 1.0,
              0.0;
@@ -794,6 +852,30 @@ TEST_CASE("SQP: nonlinear equality with active inequality", "[sqp][mixed]")
     expected << std::sqrt(2)/2,
                 std::sqrt(2)/2;
 
+    CAPTURE(r.x);
+    CAPTURE(expected);
+    CAPTURE(r.summary.converged);
+    CAPTURE(r.summary.termination_reason);
+    CAPTURE(r.summary.iterations);
+
     REQUIRE(r.x.isApprox(expected, 1e-4));
+}
+
+// =============================================================================
+//  Building Block & Robustness Unit Tests
+// =============================================================================
+
+TEST_CASE("computeFeasiblePoint returns strictly feasible interior point for box constraints", "[lp][feasibility]") {
+    VectorXd c = VectorXd::Zero(2);
+    MatrixXd A = MatrixXd::Zero(0, 2);
+    VectorXd b = VectorXd::Zero(0);
+    MatrixXd C = MatrixXd::Identity(2, 2);
+    VectorXd d(2); d << 1.0, 1.0; // Box constraints x_i + 1 >= 0
+
+    IPMSolverOptions opts;
+    VectorXd x_feas = LPSolver::computeFeasiblePoint(c, A, b, C, d, opts);
+
+    VectorXd slack = C * x_feas + d;
+    REQUIRE((slack.array() > 0.0).all());
 }
 

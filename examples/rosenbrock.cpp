@@ -56,13 +56,13 @@ int main()
 
     //Setup problem to solve
     furiaopt::NLPProblem problem;
-    problem.cost_func = [params](const Eigen::VectorXd& x) {
+    problem.cost_func = [params](const Eigen::VectorXd& x) -> double {
         return rosenbrock(params, x);
     };
-    problem.gradient_func = [params](const Eigen::VectorXd& x) {
+    problem.gradient_func = [params](const Eigen::VectorXd& x) -> Eigen::VectorXd {
         return rosenbrock_gradient(params, x);
     };
-    problem.hessian_func = [params](const Eigen::VectorXd& x) {
+    problem.hessian_func = [params](const Eigen::VectorXd& x) -> Eigen::MatrixXd {
         return rosenbrock_hessian(params, x);
     };
 

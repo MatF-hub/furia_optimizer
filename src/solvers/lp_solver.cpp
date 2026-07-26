@@ -147,13 +147,6 @@ void LPSolver::general_LP_solver(Result& result)
 
             // 3. Solve the full KKT system using ColPivHouseholderQR (robust for dense KKTs)
             auto qr = KKT.colPivHouseholderQr();
-
-            if (qr.rank() < KKT.rows())
-            {
-                logger_->error("KKT matrix is rank deficient. IPM cannot proceed.");
-                throw std::runtime_error("KKT matrix is rank deficient. IPM cannot proceed.");
-            }
-
             Eigen::VectorXd delta = qr.solve(rhs);
             Eigen::VectorXd dx = delta.head(n);
             Eigen::VectorXd dlambda = delta.tail(m_eq);

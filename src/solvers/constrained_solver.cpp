@@ -181,8 +181,8 @@ Result ConstrainedSolver::solve(){
         Eigen::VectorXd D_mhu_i = QP_result.mhu - mhu_i;
         
         if ((grad_lagrangian.transpose()*p_i).norm() < options_.get().gradient_tolerance) {
-            QP_result.summary.converged = true;
-            QP_result.summary.termination_reason = TerminationReason::GradientTolerance;
+            result.summary.converged = true;
+            result.summary.termination_reason = TerminationReason::GradientTolerance;
             break;
         }
 
@@ -230,14 +230,18 @@ Result ConstrainedSolver::solve(){
     result.mhu = mhu_i;
     bool eq_constraint_satisfied = 
         equality_constraint_func_(x_i).size() == 0 ||
-        equality_constraint_func_(x_i).lpNorm<Eigen::Infinity>() <= options_.get().constraint_tolerance; //Here should go constraint tolerance
+        equality_constraint_func_(x_i).lpNorm<Eigen::Infinity>() <= options_.get().constraint_tolerance;
     bool inequality_constraint_satisfied =
         inequality_constraint_func_(x_i).size() == 0 ||
         inequality_constraint_func_(x_i).minCoeff() >= - options_.get().constraint_tolerance;
-    result.summary.converged = iter < options_.get().max_iter && eq_constraint_satisfied && inequality_constraint_satisfied;
-    if (!result.summary.converged)
-    {
+
+    if (!result.summary.converged) {
+        result.summary.converged = iter < options_.get().max_iter && eq_constraint_satisfied && inequality_constraint_satisfied;
+        if (result.summary.converged) {
+            result.summary.termination_reason = TerminationReason::GradientTolerance;
+        } else {
             result.summary.termination_reason = TerminationReason::MaxIterations;
+        }
     }            
 
     return result;
