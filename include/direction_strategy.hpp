@@ -25,7 +25,7 @@ class GradientDescentDirection : public DirectionStrategy {
 public:
     GradientDescentDirection(const NLPProblem& problem) : DirectionStrategy(problem){};
 
-    Eigen::VectorXd getDirection(const Eigen::VectorXd& gradient, const Eigen::VectorXd& x_i) override {
+    Eigen::VectorXd getDirection(const Eigen::VectorXd& gradient, const Eigen::VectorXd&) override {
         return -gradient;
     };
 };
@@ -79,7 +79,7 @@ public:
 
 class GaussNewtonHessianApproximation {
     std::reference_wrapper<const LSProblem> problem_;
-    double sigma_ = 1e-14; // Damping factor for Gauss-Newton method
+    double sigma_ = 1e-10; // Damping factor for Gauss-Newton method
 
 public: 
     GaussNewtonHessianApproximation(const LSProblem& problem) : problem_(std::cref(problem)){};

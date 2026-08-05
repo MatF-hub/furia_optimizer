@@ -876,6 +876,9 @@ TEST_CASE("computeFeasiblePoint returns strictly feasible interior point for box
     VectorXd x_feas = LPSolver::computeFeasiblePoint(c, A, b, C, d, opts);
 
     VectorXd slack = C * x_feas + d;
+
+    CAPTURE(slack);
+
     REQUIRE((slack.array() > 0.0).all());
 }
 
