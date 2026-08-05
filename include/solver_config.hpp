@@ -20,12 +20,12 @@ enum class GlobalizationMethod {
     TrustRegion
 };
 struct UnconstrainedSolverOptions {
-    DirectionMethod direction_method;
-    GlobalizationMethod globalization_method;
-    int max_iter;
-    double gradient_tolerance;
-    double step_tolerance;
-    double function_tolerance;
+    DirectionMethod direction_method = DirectionMethod::GradientDescent;
+    GlobalizationMethod globalization_method = GlobalizationMethod::LineSearch;
+    int max_iter = 1e4;
+    double gradient_tolerance = 1e-6;
+    double step_tolerance = 1e-10;
+    double function_tolerance = 1e-12;
     std::shared_ptr<spdlog::logger> logger = std::make_shared<spdlog::logger>("null", std::make_shared<spdlog::sinks::null_sink_mt>());
 };
 
@@ -40,7 +40,7 @@ struct IPMSolverOptions {
 
 struct ConstrainedSolverOptions: UnconstrainedSolverOptions {
     IPMSolverOptions QP_subproblem_options;
-    double constraint_tolerance;
+    double constraint_tolerance = 1e-6;
 };
 
 struct LinearConstraints {
@@ -114,7 +114,8 @@ enum class TerminationReason {
     MaxIterations,
     GradientTolerance,
     StepTolerance,
-    FunctionTolerance
+    FunctionTolerance,
+    DirectSolve
 };
 
 struct SolverSummary {
@@ -123,7 +124,7 @@ struct SolverSummary {
     double final_cost = 0.0;
     double final_gradient_norm = 0.0;
     bool converged = false;
-    TerminationReason termination_reason;
+    TerminationReason termination_reason = TerminationReason::MaxIterations;
 };
 
 struct Result {

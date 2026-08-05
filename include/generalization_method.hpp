@@ -82,12 +82,13 @@ inline double compute_step_length(const GlobalizationMethod& globalization_metho
     Eigen::VectorXd abs_grad = g(x).cwiseAbs();
     double Directional_derivative_l1_norm_merit = grad_f(x).dot(direction) - sigma.dot(abs_grad);
     Eigen::VectorXd ineq_constraints = h(x);
+    Eigen::MatrixXd grad_h_x = grad_h(x);
 
     for (int i = 0; i < ineq_constraints.size(); i++)
     {
         if (ineq_constraints(i)<0)
         {
-            Directional_derivative_l1_norm_merit  -= tau(i)*(grad_h(x).col(i)).dot(direction);
+            Directional_derivative_l1_norm_merit  -= tau(i)*(grad_h_x.col(i)).dot(direction);
         };
     }
 

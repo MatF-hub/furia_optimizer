@@ -74,20 +74,49 @@ Eigen::MatrixXd BFGSHessianApproximation::getApproximateHessian(const Eigen::Vec
         return H_k_; // Initial direction is just the negative gradient, returning identity matrix
     }
 
+    const double eps = std::numeric_limits<double>::epsilon();
+    const double tol_s = std::sqrt(eps); // Tolerance for step size relative to x
+    
     Eigen::VectorXd s = x_k_plus_1 - x_k_;
+    //Early exit if step size is too small relative to x
+    if (s.norm() < tol_s * std::max(1.0, x_k_plus_1.norm())) {
+        x_k_ = x_k_plus_1;
+        g_k_ = g_k_plus_1;
+        return H_k_;
+    }
+
     Eigen::VectorXd y = g_k_plus_1 - g_k_;
 
     //Implement powell's damping strategy to ensure positive definiteness of the Hessian approximation
-    double sTHs = s.transpose()*(H_k_ * s);
+    Eigen::VectorXd Hs = H_k_ * s;
+    double sTHs = s.transpose()*Hs;
+
+    //Ensure s^T*H*s is strictly positive definite to ensure H_k_ remains positive definite.
+    if (sTHs <= eps*s.squaredNorm()) {
+        x_k_ = x_k_plus_1;
+        g_k_ = g_k_plus_1;
+        return H_k_;
+    }
+
     double gamma_sTHs = gamma_ * sTHs;
     double yTs = y.transpose() * s;
     double sTy = yTs;
-    if (yTs <= gamma_sTHs){
-        y = y + (gamma_sTHs - sTy)*(H_k_*s - y)/(sTHs-sTy);
-        sTy = y.dot(s);  // recompute after damping
+    if (yTs < gamma_sTHs){
+        double denom = sTHs - yTs;
+        if (denom > eps * sTHs)
+        {
+            y = y + (gamma_sTHs - sTy)*(Hs - y)/denom;
+            sTy = y.dot(s);  // recompute after damping
+        }
+        else
+        {
+            x_k_ = x_k_plus_1;
+            g_k_ = g_k_plus_1;
+            return H_k_;
+        }
     }
 
-    H_k_ = H_k_ + (y * y.transpose()) / (sTy) - (H_k_ * s * s.transpose() * H_k_) / sTHs;
+    H_k_ = H_k_ + (y * y.transpose()) / (sTy) - (Hs * Hs.transpose()) / sTHs;
     x_k_ = x_k_plus_1;
     g_k_ = g_k_plus_1;
     return H_k_;

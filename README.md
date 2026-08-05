@@ -12,7 +12,7 @@ FuriaOpt is a C++ optimization library designed to solve NLP, LS, QP, and LP pro
 *   **Visualizer:** To visualize iterations of the solvers on provided examples.
 
 ## Requirements
-*   C++17 or higher
+*   C++20 or higher
 *   CMake
 *   Eigen 3
 *   Catch2 (for testing)

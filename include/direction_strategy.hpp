@@ -47,7 +47,12 @@ public:
     };
 
     Eigen::MatrixXd getApproximateHessian(const Eigen::VectorXd& g_k_plus_1, const Eigen::VectorXd& x_k_plus_1);
-};
+
+    //This is needed for the consistency of the BFGS update when constraints are present.
+    // y = Dlagrangian(x_k_plus_1, lambda_k_plus_1, mhu_k_plus_1) - Dlagrangian(x_k, lambda_k_plus_1, mhu_k_plus_1)
+    // when we call getApproximateHessian the g_k_plus_1 passed is the Dlagrangian(x_k, lambda_k, mhu_k) 
+    // so after updating lambda_k and mhu_k to lambda_k_plus_1 and mhu_k_plus_1 we need to update g_k to be consistent with the new multipliers.
+    void setPreviousGradient(const Eigen::VectorXd& g_k) { g_k_ = g_k; } };
 
 class BFGSDirection : public DirectionStrategy {
 
@@ -74,7 +79,7 @@ public:
 
 class GaussNewtonHessianApproximation {
     std::reference_wrapper<const LSProblem> problem_;
-    double sigma_ = 1e-10; // Damping factor for Gauss-Newton method
+    double sigma_ = 1e-14; // Damping factor for Gauss-Newton method
 
 public: 
     GaussNewtonHessianApproximation(const LSProblem& problem) : problem_(std::cref(problem)){};

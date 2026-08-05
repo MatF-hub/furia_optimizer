@@ -156,11 +156,10 @@ void LPSolver::general_LP_solver(Result& result)
             const double beta = 0.5; // Step reduction factor
             
             // Fraction-to-the-boundary rule: ensure C*(x + alpha*dx) + d > 0
+            const double frac = 0.995; // Fraction of the distance to the boundary to step
             while (alpha > 1e-8) {
                 Eigen::VectorXd s_next = C * (x + alpha * dx) + d;
-                if ((s_next.array() > 0).all()) {
-                    break;
-                }
+                 if (C.rows() == 0 || (s_next.array() >= (1.0 - frac) * s.array()).all()) break;
                 alpha *= beta;
             }
 
@@ -173,7 +172,11 @@ void LPSolver::general_LP_solver(Result& result)
 
         // Reduce barrier parameter to tighten the approximation to the true LP
         tau *= mu;
-        if (tau < 1e-8) break;
+        if (tau < 1e-8) 
+        {
+            tau /= mu;  // Revert last scaling
+            break;
+        }        
         ++outer;
     }
 

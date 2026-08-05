@@ -32,12 +32,21 @@ Result QPSolver::solve(){
     }
     else
     {
-        const Eigen::VectorXd& c = problem_.get().c;
-        const Eigen::MatrixXd& A = problem_.get().A.value_or(Eigen::MatrixXd::Zero(0, c.rows()));
-        const Eigen::VectorXd& b = problem_.get().b.value_or(Eigen::VectorXd::Zero(0));
-        const Eigen::MatrixXd& C = problem_.get().C.value_or(Eigen::MatrixXd::Zero(0, c.rows()));
-        const Eigen::VectorXd& d = problem_.get().d.value_or(Eigen::VectorXd::Zero(0));
-        x_0_ = LPSolver::computeFeasiblePoint(c, A, b, C, d, options_.get());
+        if (problem_.get().hasEqualityConstraints() || problem_.get().hasInequalityConstraints())
+        {
+            logger_->info("No initial guess provided, computing a feasible point for the QP problem.");
+            const Eigen::VectorXd& c = problem_.get().c;
+            const Eigen::MatrixXd& A = problem_.get().A.value_or(Eigen::MatrixXd::Zero(0, c.rows()));
+            const Eigen::VectorXd& b = problem_.get().b.value_or(Eigen::VectorXd::Zero(0));
+            const Eigen::MatrixXd& C = problem_.get().C.value_or(Eigen::MatrixXd::Zero(0, c.rows()));
+            const Eigen::VectorXd& d = problem_.get().d.value_or(Eigen::VectorXd::Zero(0));
+            x_0_ = LPSolver::computeFeasiblePoint(c, A, b, C, d, options_.get());
+        }
+        else
+        {
+            logger_->info("No initial guess provided, using zero vector as initial guess.");
+            x_0_ = Eigen::VectorXd::Zero(problem_.get().c.size());
+        }
     }
     
     result.summary.initial_cost = cost_func_(x_0_);
@@ -78,8 +87,9 @@ void QPSolver::no_constraints_QP_solver(Result& result)
     result.lambda = Eigen::VectorXd::Zero(0);
     result.mhu = Eigen::VectorXd::Zero(0);
     result.summary.final_cost = cost_func_(result.x);
-    result.summary.iterations = 0;
+    result.summary.iterations = 0; // Direct solve
     result.summary.converged = true;
+    result.summary.termination_reason = TerminationReason::DirectSolve;
 };
 
 void QPSolver::equality_constrained_QP_solver(Result& result)
@@ -136,8 +146,9 @@ void QPSolver::equality_constrained_QP_solver(Result& result)
     }
     result.mhu = Eigen::VectorXd::Zero(0);
     result.summary.final_cost = cost_func_(result.x);
-    result.summary.iterations = 1; // Direct solve
+    result.summary.iterations = 0; // Direct solve
     result.summary.converged = true;
+    result.summary.termination_reason = TerminationReason::DirectSolve;
 };
 
 void QPSolver::general_QP_solver(Result& result)
@@ -248,11 +259,11 @@ void QPSolver::general_QP_solver(Result& result)
             double alpha = 1.0;
             const double beta = 0.5;
             
+            // Fraction-to-the-boundary rule: ensure C*(x + alpha*dx) + d > 0
+            const double frac = 0.995; // Fraction of the distance to the boundary to step
             while (alpha > 1e-8) {
                 Eigen::VectorXd s_next = C * (x + alpha * dx) + d;
-                if ((s_next.array() > 0).all()) {
-                    break; // Stepping target remains strictly inside the feasible polytope
-                }
+                 if (C.rows() == 0 || (s_next.array() >= (1.0 - frac) * s.array()).all()) break;
                 alpha *= beta;
             }
 
@@ -266,7 +277,11 @@ void QPSolver::general_QP_solver(Result& result)
 
         // Tighter optimization target scaling
         tau *= mu;
-        if (tau < 1e-8) break;
+        if (tau < 1e-8) 
+        {
+            tau /= mu;  // Revert last scaling
+            break;
+        }
         ++outer;
     }
 
@@ -282,7 +297,7 @@ void QPSolver::general_QP_solver(Result& result)
 
     double primal_residual = (m_eq > 0) ? (A * x + b).norm() : 0.0;
 
-    Eigen::VectorXd dual_residual_eq = c - A.transpose() * lambda;
+    Eigen::VectorXd dual_residual_eq = H*x + c - A.transpose() * lambda;
     if (C.rows() > 0) {
         dual_residual_eq -= C.transpose() * mhu;
     }

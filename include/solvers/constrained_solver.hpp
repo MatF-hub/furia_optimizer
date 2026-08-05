@@ -14,6 +14,7 @@ class ConstrainedSolver{
     CostFunc cost_func_;
     GradientFunc gradient_func_;
     std::function<Eigen::MatrixXd(const Eigen::VectorXd&, const Eigen::VectorXd&)> get_approximate_hessian_func_;
+    std::function<void(const Eigen::VectorXd&)> update_previous_gradient_func_;
 
     //Constrained
     EqualityConstraintFunc equality_constraint_func_;
