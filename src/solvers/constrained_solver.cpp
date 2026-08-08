@@ -175,7 +175,6 @@ Result ConstrainedSolver::solve(){
             // p = 0 is a feasible point for the QP subproblem if it is strictly interior (each inequality constraints hold)
             Eq_qp_problem.x0 = Eigen::VectorXd::Zero(x_i.size()); 
         } // else leave unset to run phase 1 LP to find a feasible points
-        Eq_qp_problem.x0 = x_i;
         Eq_qp_problem.c = grad_f;
         Eq_qp_problem.H = get_approximate_hessian_func_(grad_lagrangian, x_i);
         Eq_qp_problem.A = grad_eq.transpose();
