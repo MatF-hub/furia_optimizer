@@ -52,13 +52,13 @@ ConstrainedSolver::ConstrainedSolver(const ConstrainedSolverOptions& options, co
     gradient_func_ = [&problem](const Eigen::VectorXd& x) -> Eigen::VectorXd { return compute_gradient(problem, x); };
 
     // Initialize the approximate Hessian strategy based on the selected method
-    auto strategy = BFGSHessianApproximation(problem);
+    auto strategy = std::make_shared<BFGSHessianApproximation>(problem);
     get_approximate_hessian_func_ = [strategy](const Eigen::VectorXd& grad_lagrangian, const Eigen::VectorXd& x) mutable {
-        return strategy.getApproximateHessian(grad_lagrangian, x);
+        return strategy->getApproximateHessian(grad_lagrangian, x);
     };
 
     update_previous_gradient_func_ = [strategy](const Eigen::VectorXd& g_k) mutable {
-        return strategy.setPreviousGradient(g_k);
+        return strategy->setPreviousGradient(g_k);
     };
 };
 
@@ -109,9 +109,9 @@ ConstrainedSolver::ConstrainedSolver(const ConstrainedSolverOptions& options, co
     };
 
     // Initialize the approximate Hessian strategy for least squares problems, which is always Gauss-Newton
-    auto strategy = GaussNewtonHessianApproximation(problem);
+    auto strategy = std::make_shared<GaussNewtonHessianApproximation>(problem);
     get_approximate_hessian_func_ = [strategy](const Eigen::VectorXd&, const Eigen::VectorXd& x) mutable {
-        return strategy.getApproximateHessian(x);
+        return strategy->getApproximateHessian(x);
     };
 
     update_previous_gradient_func_ = [](const Eigen::VectorXd&) { /*No need to update previous gradient for Gauss-Newton approximation */};
@@ -171,8 +171,8 @@ Result ConstrainedSolver::solve(){
         }
 
         QPProblem Eq_qp_problem;
-        if (h_i.size() == 0 || h_i.minCoeff() >= 0) {
-            // p = 0 is a feasible point for the QP subproblem if it is strictly interior (each inequality constraints hold)
+        if (h_i.size() == 0 || h_i.minCoeff() > 0) {
+            // p = 0 is a feasible point for the QP subproblem if it is STRICTLY (> not >=) interior (each inequality constraints hold)
             Eq_qp_problem.x0 = Eigen::VectorXd::Zero(x_i.size()); 
         } // else leave unset to run phase 1 LP to find a feasible points
         Eq_qp_problem.c = grad_f;
@@ -242,7 +242,7 @@ Result ConstrainedSolver::solve(){
 
         x_i = x_new;
 
-        //Before next iteration, we update the previous gradient in the BFGS approximnation 
+        //Before next iteration, we update the previous gradient in the BFGS approximation 
         //to be consistent with the new multipliers that will be used in the next iteration.
         //Notice we use graf_f,h,g compute at the previous x_i, with new multipliers lambda_k_plus_1, mhu_k_plus_1
         update_previous_gradient_func_(grad_f - grad_eq*lambda_i - grad_ineq*mhu_i); //DLagrangian(x_k, lambda_k_plus_1, mhu_k_plus_1)
@@ -256,15 +256,17 @@ Result ConstrainedSolver::solve(){
     result.x = x_i;
     result.lambda = lambda_i;
     result.mhu = mhu_i;
-    bool eq_constraint_satisfied = 
-        equality_constraint_func_(x_i).size() == 0 ||
-        equality_constraint_func_(x_i).lpNorm<Eigen::Infinity>() <= options_.get().constraint_tolerance;
-    bool inequality_constraint_satisfied =
-        inequality_constraint_func_(x_i).size() == 0 ||
-        inequality_constraint_func_(x_i).minCoeff() >= - options_.get().constraint_tolerance;
 
     if (!result.summary.converged && iter >= options_.get().max_iter) {
         result.summary.termination_reason = TerminationReason::MaxIterations;
+
+        bool eq_constraint_satisfied = 
+        equality_constraint_func_(x_i).size() == 0 ||
+        equality_constraint_func_(x_i).lpNorm<Eigen::Infinity>() <= options_.get().constraint_tolerance;
+        bool inequality_constraint_satisfied =
+        inequality_constraint_func_(x_i).size() == 0 ||
+        inequality_constraint_func_(x_i).minCoeff() >= - options_.get().constraint_tolerance;
+
         if (eq_constraint_satisfied && inequality_constraint_satisfied) 
         {
             result.summary.converged = true;

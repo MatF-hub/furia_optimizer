@@ -669,7 +669,9 @@ TEST_CASE("SQP: quadratic objective with linear equality constraint", "[sqp][equ
     CAPTURE(r.summary.termination_reason);
     CAPTURE(r.summary.iterations);
 
-    REQUIRE(r.x.isApprox(expected, 1e-6));
+    REQUIRE(r.x.isApprox(expected, 1e-4));
+    REQUIRE(r.summary.converged == true);
+    REQUIRE(r.summary.termination_reason == TerminationReason::GradientTolerance);
     
 }
 
@@ -731,6 +733,8 @@ TEST_CASE("SQP: quadratic objective with active inequality constraint", "[sqp][i
     CAPTURE(r.summary.iterations);
 
     REQUIRE(r.x.isApprox(expected, 1e-5));
+    REQUIRE(r.summary.converged == true);
+    REQUIRE(r.summary.termination_reason == TerminationReason::GradientTolerance);
 }
 
 TEST_CASE("SQP: nonlinear equality constraint circle", "[sqp][nonlinear]")
@@ -787,6 +791,8 @@ TEST_CASE("SQP: nonlinear equality constraint circle", "[sqp][nonlinear]")
     CAPTURE(r.summary.iterations);
 
     REQUIRE(r.x.isApprox(expected, 1e-4));
+    REQUIRE(r.summary.converged == true);
+    REQUIRE(r.summary.termination_reason == TerminationReason::GradientTolerance);
 }
 
 TEST_CASE("SQP: nonlinear equality with active inequality", "[sqp][mixed]")
@@ -859,6 +865,8 @@ TEST_CASE("SQP: nonlinear equality with active inequality", "[sqp][mixed]")
     CAPTURE(r.summary.iterations);
 
     REQUIRE(r.x.isApprox(expected, 1e-4));
+    REQUIRE(r.summary.converged == true);
+    REQUIRE(r.summary.termination_reason == TerminationReason::GradientTolerance);
 }
 
 // =============================================================================

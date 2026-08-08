@@ -62,6 +62,7 @@ void LPSolver::general_LP_solver(Result& result)
     // Dimensions
     const size_t n = c.rows();
     const size_t m_eq = A.rows();
+    const size_t m_ineq = C.rows();
 
     // Initialize variables
     Eigen::VectorXd x;
@@ -125,7 +126,7 @@ void LPSolver::general_LP_solver(Result& result)
 
             // 1. Compute LHS Hessian component: tau * C^T * diag(s)^-2 * C
             // Using .asDiagonal() avoids full matrix multiplication overhead
-            // Add tiny diagonal regularization (1e-12) to prevent rank deficient KKT matrix
+            // Add tiny diagonal regularization to prevent rank deficient KKT matrix
             KKT.block(0, 0, n, n) = tau * C.transpose() * s_inv2.asDiagonal() * C + rho_tol * Eigen::MatrixXd::Identity(n, n);
 
             // Bottom-right Dual Block: (+ delta * I)
@@ -172,9 +173,10 @@ void LPSolver::general_LP_solver(Result& result)
 
         // Reduce barrier parameter to tighten the approximation to the true LP
         tau *= mu;
-        if (tau < 1e-8) 
+        if (m_ineq*tau < tol) 
         {
             tau /= mu;  // Revert last scaling
+            result.summary.termination_reason = TerminationReason::StepTolerance;
             break;
         }        
         ++outer;
@@ -182,7 +184,7 @@ void LPSolver::general_LP_solver(Result& result)
 
     Eigen::VectorXd s_final = Eigen::VectorXd::Zero(d.rows());
     Eigen::VectorXd mhu = Eigen::VectorXd::Zero(C.rows());
-    if (C.rows() > 0) {
+    if (m_ineq > 0) {
         s_final = C * x + d;
         if ((s_final.array() <= 0).any()) {
             throw std::runtime_error("Final solution is not strictly feasible for inequality constraints.");
@@ -193,12 +195,12 @@ void LPSolver::general_LP_solver(Result& result)
     double primal_residual = (m_eq > 0) ? (A * x + b).norm() : 0.0;
 
     Eigen::VectorXd dual_residual_eq = c - A.transpose() * lambda;
-    if (C.rows() > 0) {
+    if (m_ineq > 0) {
         dual_residual_eq -= C.transpose() * mhu;
     }
     double dual_residual = dual_residual_eq.norm();
 
-    double duality_gap = (C.rows() > 0) ? s_final.dot(mhu) : 0.0;
+    double duality_gap = (m_ineq > 0) ? s_final.dot(mhu) : 0.0;
 
     // Pack results
     result.x = x;
@@ -209,7 +211,7 @@ void LPSolver::general_LP_solver(Result& result)
     result.summary.converged = (primal_residual < tol) && 
                                (dual_residual < tol) && 
                                (duality_gap < tol);
-    if (!result.summary.converged) {
+    if (!result.summary.converged && outer >= max_outer) {
         result.summary.termination_reason = TerminationReason::MaxIterations;
     };
 

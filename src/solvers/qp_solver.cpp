@@ -178,6 +178,7 @@ void QPSolver::general_QP_solver(Result& result)
     // Structural Dimensions
     const size_t n = c.rows();
     const size_t m_eq = A.rows();
+    const size_t m_ineq = C.rows();
 
     // Variable Initialization
     Eigen::VectorXd x = x_0_;
@@ -228,7 +229,7 @@ void QPSolver::general_QP_solver(Result& result)
             const double delta_tol = 1e-8; // Dual regularization (relaxes linearly dependent constraints)
 
             // 1. Build Left-Hand Side (LHS) Block: H + tau * C^T * diag(s)^-2 * C
-            // Add tiny diagonal regularization (1e-12) to prevent rank deficient KKT matrix
+            // Add tiny diagonal regularization to prevent rank deficient KKT matrix
             KKT.block(0, 0, n, n) = H + tau * C.transpose() * s_inv2.asDiagonal() * C + rho_tol * Eigen::MatrixXd::Identity(n, n);
 
             // Bottom-right Dual Block: (+ delta * I)
@@ -277,9 +278,10 @@ void QPSolver::general_QP_solver(Result& result)
 
         // Tighter optimization target scaling
         tau *= mu;
-        if (tau < 1e-8) 
+        if (m_ineq*tau < tol) 
         {
             tau /= mu;  // Revert last scaling
+            result.summary.termination_reason = TerminationReason::StepTolerance;
             break;
         }
         ++outer;
@@ -287,7 +289,7 @@ void QPSolver::general_QP_solver(Result& result)
 
     Eigen::VectorXd s_final = Eigen::VectorXd::Zero(d.rows());
     Eigen::VectorXd mhu = Eigen::VectorXd::Zero(C.rows());
-    if (C.rows() > 0) {
+    if (m_ineq > 0) {
         s_final = C * x + d;
         if ((s_final.array() <= 0).any()) {
             throw std::runtime_error("Final solution is not strictly feasible for inequality constraints.");
@@ -298,12 +300,12 @@ void QPSolver::general_QP_solver(Result& result)
     double primal_residual = (m_eq > 0) ? (A * x + b).norm() : 0.0;
 
     Eigen::VectorXd dual_residual_eq = H*x + c - A.transpose() * lambda;
-    if (C.rows() > 0) {
+    if (m_ineq > 0) {
         dual_residual_eq -= C.transpose() * mhu;
     }
     double dual_residual = dual_residual_eq.norm();
 
-    double duality_gap = (C.rows() > 0) ? s_final.dot(mhu) : 0.0;  
+    double duality_gap = (m_ineq > 0) ? s_final.dot(mhu) : 0.0;  
     
     // Wrap results
     result.x = x;
@@ -314,9 +316,9 @@ void QPSolver::general_QP_solver(Result& result)
     result.summary.converged = (primal_residual < tol) && 
                                (dual_residual < tol) && 
                                (duality_gap < tol);
-    if (!result.summary.converged) {
+    if (!result.summary.converged && outer >= max_outer) {
         result.summary.termination_reason = TerminationReason::MaxIterations;
-    };
+    }
 }
 
 }
