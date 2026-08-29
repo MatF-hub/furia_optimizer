@@ -1,15 +1,10 @@
 #include "solvers/unconstrained_solver.hpp"
 #include "generalization_method.hpp"
 #include "compute_gradient.hpp"
+#include "utils.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
-inline std::string vec_to_string(const Eigen::VectorXd& v)
-{
-    std::ostringstream oss;
-    oss << v.transpose();
-    return oss.str();
-}
 namespace furiaopt{
 
 UnconstrainedSolver::UnconstrainedSolver(const UnconstrainedSolverOptions& options, const NLPProblem& problem)
@@ -101,7 +96,7 @@ Result UnconstrainedSolver::solve(){
             iter,
             f_i,
             g_i.norm(),
-            vec_to_string(x_i)
+            furiaopt::utils::vec_to_string(x_i)
         );
 
         if (Dx_i <= options_.get().step_tolerance) {

@@ -1,16 +1,9 @@
 #include "solvers/qp_solver.hpp"
 #include "solvers/lp_solver.hpp"
+#include "barrier_ipm.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
-#include <iostream> 
-
-inline std::string vec_to_string(const Eigen::VectorXd& v)
-{
-    std::ostringstream oss;
-    oss << v.transpose();
-    return oss.str();
-}
 namespace furiaopt{
 
 QPSolver::QPSolver(const IPMSolverOptions& options, const QPProblem& problem) : options_(std::cref(options)), problem_(std::cref(problem)), logger_(options_.get().logger ? options_.get().logger : std::make_shared<spdlog::logger>("null", std::make_shared<spdlog::sinks::null_sink_mt>())) {
@@ -167,7 +160,6 @@ void QPSolver::general_QP_solver(Result& result)
     //   A                            |  0      ]    dlambda ]       -Ax - b                                                                     ]
 
     // Extract problem parameters safely from the reference wrapper
-    // Extract problem data safely
     const Eigen::VectorXd& c = problem_.get().c;
     const Eigen::MatrixXd& H = problem_.get().H;
     const Eigen::MatrixXd& A = problem_.get().A.value_or(Eigen::MatrixXd::Zero(0, c.rows()));
@@ -175,150 +167,16 @@ void QPSolver::general_QP_solver(Result& result)
     const Eigen::MatrixXd& C = problem_.get().C.value_or(Eigen::MatrixXd::Zero(0, c.rows()));
     const Eigen::VectorXd& d = problem_.get().d.value_or(Eigen::VectorXd::Zero(0));
 
-    // Structural Dimensions
-    const size_t n = c.rows();
-    const size_t m_eq = A.rows();
-    const size_t m_ineq = C.rows();
-
-    // Variable Initialization
-    Eigen::VectorXd x = x_0_;
-    Eigen::VectorXd lambda = Eigen::VectorXd::Zero(m_eq);
-
-    // IPM Control Parameters
-    double tau = options_.get().tau_initial;              // Initial barrier parameter strength
-    const double mu = options_.get().tau_factor;          // Tau attenuation stepping scalar
-    const int max_outer = options_.get().max_outer;       // Barrier reduction iterations
-    const int max_inner = options_.get().max_inner;       // Fixed centering Newton steps per inner loop
-    const double tol = options_.get().ipm_tol;        // Global convergence threshold
-
-    // Allocate KKT Memory Frame
-    Eigen::MatrixXd KKT = Eigen::MatrixXd::Zero(n + m_eq, n + m_eq);
-    Eigen::VectorXd rhs = Eigen::VectorXd::Zero(n + m_eq);
-
-    // Preset time-invariant constraint mappings
-    KKT.block(0, n, n, m_eq) = -A.transpose();
-    KKT.block(n, 0, m_eq, n) = A;
-
-    int outer = 0;
-    while (outer < max_outer) {
-        
-        logger_->info(
-            "iter={},cost={:.8f},equality_constraint={:.3e},inequality_constraint={:.3e},x={}",
-            outer,
-            cost_func_(x),
-            (A * x + b).norm(),
-            (C * x + d).norm(),
-            vec_to_string(x)
-        );
-
-        for (int inner = 0; inner < max_inner; ++inner) {
-            
-            // Calculate inequality clearances: s = C*x + d
-            Eigen::VectorXd s = C * x + d;
-            
-            // Safety guard to ensure strict feasibility domain
-            if ((s.array() <= 0).any()) {
-                throw std::runtime_error("QP IPM path tracking drifted out of the feasible interior domain (s <= 0).");
-            }
-
-            // Invert the slack arrays for matrix assembly
-            Eigen::VectorXd s_inv = s.cwiseInverse();
-            Eigen::VectorXd s_inv2 = s_inv.cwiseAbs2();
-
-            const double rho_tol = 1e-8;   // Primal regularization (damps undetermined primal steps)
-            const double delta_tol = 1e-8; // Dual regularization (relaxes linearly dependent constraints)
-
-            // 1. Build Left-Hand Side (LHS) Block: H + tau * C^T * diag(s)^-2 * C
-            // Add tiny diagonal regularization to prevent rank deficient KKT matrix
-            KKT.block(0, 0, n, n) = H + tau * C.transpose() * s_inv2.asDiagonal() * C + rho_tol * Eigen::MatrixXd::Identity(n, n);
-
-            // Bottom-right Dual Block: (+ delta * I)
-            if (m_eq > 0) {
-                KKT.block(n, n, m_eq, m_eq) = delta_tol * Eigen::MatrixXd::Identity(m_eq, m_eq);
-            }
-
-            // 2. Build Right-Hand Side (RHS) Residual Vectors
-            Eigen::VectorXd dual_res = -c - H * x + A.transpose() * lambda + tau * C.transpose() * s_inv;
-            Eigen::VectorXd primal_res = -A * x - b;
-
-            rhs.head(n) = dual_res;
-            rhs.tail(m_eq) = primal_res;
-
-            // Break if the centering step has already converged
-            if (dual_res.norm() < tol && primal_res.norm() < tol) {
-                break;
-            }
-
-            // 3. Robust Direct Matrix Solve using Column-Pivoted Householder QR
-            auto qr = KKT.colPivHouseholderQr();
-            Eigen::VectorXd delta = qr.solve(rhs);
-            
-            Eigen::VectorXd dx = delta.head(n);
-            Eigen::VectorXd dlambda = delta.tail(m_eq);
-
-            // 4. Backtracking Line Search (Fraction-to-boundary rules)
-            double alpha = 1.0;
-            const double beta = 0.5;
-            
-            // Fraction-to-the-boundary rule: ensure C*(x + alpha*dx) + d > 0
-            const double frac = 0.995; // Fraction of the distance to the boundary to step
-            while (alpha > 1e-8) {
-                Eigen::VectorXd s_next = C * (x + alpha * dx) + d;
-                 if (C.rows() == 0 || (s_next.array() >= (1.0 - frac) * s.array()).all()) break;
-                alpha *= beta;
-            }
-
-            // Apply updates
-            x += alpha * dx;
-            lambda += alpha * dlambda;
-
-            // Minor inner termination criteria if step length vanishes
-            if (dx.norm() < tol) break;
-        }
-
-        // Tighter optimization target scaling
-        tau *= mu;
-        if (m_ineq*tau < tol) 
-        {
-            tau /= mu;  // Revert last scaling
-            result.summary.termination_reason = TerminationReason::StepTolerance;
-            break;
-        }
-        ++outer;
-    }
-
-    Eigen::VectorXd s_final = Eigen::VectorXd::Zero(d.rows());
-    Eigen::VectorXd mhu = Eigen::VectorXd::Zero(C.rows());
-    if (m_ineq > 0) {
-        s_final = C * x + d;
-        if ((s_final.array() <= 0).any()) {
-            throw std::runtime_error("Final solution is not strictly feasible for inequality constraints.");
-        }
-        mhu = tau * s_final.cwiseInverse();
-    }
-
-    double primal_residual = (m_eq > 0) ? (A * x + b).norm() : 0.0;
-
-    Eigen::VectorXd dual_residual_eq = H*x + c - A.transpose() * lambda;
-    if (m_ineq > 0) {
-        dual_residual_eq -= C.transpose() * mhu;
-    }
-    double dual_residual = dual_residual_eq.norm();
-
-    double duality_gap = (m_ineq > 0) ? s_final.dot(mhu) : 0.0;  
-    
-    // Wrap results
-    result.x = x;
-    result.lambda = lambda;
-    result.mhu = mhu;
-    result.summary.iterations = outer;
-    result.summary.final_cost = cost_func_(result.x);
-    result.summary.converged = (primal_residual < tol) && 
-                               (dual_residual < tol) && 
-                               (duality_gap < tol);
-    if (!result.summary.converged && outer >= max_outer) {
-        result.summary.termination_reason = TerminationReason::MaxIterations;
-    }
+    // Interior Point Method using Barrier Function
+    IPMProblem ipm_problem;
+    ipm_problem.x0 = x_0_;
+    ipm_problem.H = H;
+    ipm_problem.c = c;
+    ipm_problem.A = A;
+    ipm_problem.b = b;
+    ipm_problem.C = C;
+    ipm_problem.d = d;
+    furiaopt::details::solve_ipm_problem(ipm_problem, options_.get(), logger_, "QP", result);
 }
 
 }

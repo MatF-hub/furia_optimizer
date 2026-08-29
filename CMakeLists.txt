@@ -41,6 +41,7 @@ add_library(furiaopt
     src/solvers/qp_solver.cpp
     src/solvers/constrained_solver.cpp
     src/direction_strategy.cpp
+    src/barrier_ipm.cpp
 )
 
 add_library(FuriaOptimizer::furiaopt ALIAS furiaopt)

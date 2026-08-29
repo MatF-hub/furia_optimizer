@@ -72,6 +72,12 @@ struct QPProblem: public LinearConstraints {
     Eigen::VectorXd c; // Linear term, dimension (n x 1)
 };
 
+struct IPMProblem: public LinearConstraints {
+    Eigen::VectorXd x0;
+    std::optional<Eigen::MatrixXd> H; // Quadratic term, dimension (n x n)
+    Eigen::VectorXd c; // Linear term, dimension (n x 1)
+};
+
 struct NonLinearConstraints {
     // equality constraints: g(x) = 0
     // Notice linear equality constrainst are rapresented as g(x) = Ax + b = 0

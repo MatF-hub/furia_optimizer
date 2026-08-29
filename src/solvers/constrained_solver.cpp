@@ -5,14 +5,6 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
-#include <iostream>
-
-inline std::string vec_to_string(const Eigen::VectorXd& v)
-{
-    std::ostringstream oss;
-    oss << v.transpose();
-    return oss.str();
-}
 namespace furiaopt{
 
 ConstrainedSolver::ConstrainedSolver(const ConstrainedSolverOptions& options, const NLPProblem& problem)
