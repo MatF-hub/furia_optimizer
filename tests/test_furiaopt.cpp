@@ -176,7 +176,6 @@ TEST_CASE("ExactNewton direction without Hessian function throws invalid_argumen
     REQUIRE_THROWS_AS(UnconstrainedSolver(opts, p), std::invalid_argument);
 }
 
-
 // =============================================================================
 //  Compute Gradient Function
 // =============================================================================
@@ -285,7 +284,8 @@ TEST_CASE("Unconstrained QP has the closed-form solution H x = -c", "[qp][uncons
 
     IPMSolverOptions ipm_options = ipm_opts();
     QPSolver s(ipm_options, qp);          // no constraints -> no_constraints_QP_solver
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
 
     VectorXd expected(2); expected << 2.0, 3.0;   // x = [2, 3]
     REQUIRE(r.x.isApprox(expected, 1e-9));
@@ -307,11 +307,14 @@ TEST_CASE("Equality-constrained QP matches the KKT solution", "[qp][equality]")
 
     IPMSolverOptions ipm_options = ipm_opts();
     QPSolver s(ipm_options, qp);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
     VectorXd expected(2); expected << 1.0, 1.0;
     REQUIRE(r.x.isApprox(expected, 1e-8));
     REQUIRE(r.summary.converged);
     REQUIRE(r.lambda.size() == qp.A.value().rows());
+    REQUIRE(r.lambda(0) == Approx(1.0).margin(1e-6));   // stationarity: Hx+c = A^T*lambda => lambda*=1
+    REQUIRE(r.summary.termination_reason == TerminationReason::DirectSolve);
     REQUIRE(r.mhu.size() == 0);
 
     // Check feasibility: A*x + b == 0
@@ -351,7 +354,8 @@ TEST_CASE("Inequality-constrained QP: inactive constraints", "[qp][inequality]")
 
     IPMSolverOptions ipm_options = ipm_opts();
     QPSolver s(ipm_options, qp);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
 
     VectorXd expected(2);
     expected << 13.0/7.0, 4.0/7.0;
@@ -359,6 +363,10 @@ TEST_CASE("Inequality-constrained QP: inactive constraints", "[qp][inequality]")
     REQUIRE(r.x.isApprox(expected, 1e-4));
     REQUIRE(r.lambda.size() == 0);
     REQUIRE(r.mhu.size() == qp.C.value().rows());
+    const VectorXd stat = qp.H * r.x + qp.c - qp.C.value().transpose() * r.mhu;   // [CNOEC] (6.16)
+    REQUIRE(stat.norm() < 1e-5);                          // dual feasibility / stationarity
+    REQUIRE(r.mhu.minCoeff() >= 0.0);                     // dual sign
+    REQUIRE(((*qp.C) * r.x + *qp.d).dot(r.mhu) < 1e-5);   // complementarity
 
     // Check feasibility: C*x + d >= 0
     if (qp.C.has_value() && qp.d.has_value()) {
@@ -439,7 +447,8 @@ TEST_CASE("Exact Newton solves a quadratic in one step", "[solver][newton]")
     
     auto o = nlp_opts(DirectionMethod::ExactNewton);
     UnconstrainedSolver s(o, p);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
 
     REQUIRE(r.x.norm() < 1e-8);
     REQUIRE(r.summary.iterations <= 2);
@@ -473,7 +482,8 @@ TEST_CASE("BFGS converges on a strictly convex quadratic", "[solver][bfgs]")
 
     auto options = nlp_opts(DirectionMethod::BFGS, 100);
     UnconstrainedSolver s(options, p);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
 
     VectorXd expected(2);
     expected << 1.0/11.0, 7.0/11.0;
@@ -533,7 +543,8 @@ TEST_CASE("Gauss-Newton converges on an overdetermined nonlinear least-squares p
 
     auto o = nlp_opts(DirectionMethod::GradientDescent, 100); //Gradient descent is correct as the problem will be seen as an NLP
     UnconstrainedSolver s(o, p);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
 
     VectorXd expected(2);
     expected << 1.0, 2.0;
@@ -562,7 +573,8 @@ TEST_CASE("Gradient-norm termination reports GradientTolerance", "[solver][termi
     auto o = nlp_opts(DirectionMethod::GradientDescent);
     o.gradient_tolerance = 1e-6;
     UnconstrainedSolver s(o, p);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
     REQUIRE(r.summary.converged);
     REQUIRE(r.summary.termination_reason == TerminationReason::GradientTolerance);
     REQUIRE(r.summary.final_gradient_norm <= 1e-6);
@@ -580,7 +592,8 @@ TEST_CASE("Function-tolerance check measures relative COST CHANGE", "[solver][te
 
     auto o = nlp_opts(DirectionMethod::GradientDescent, 100000);
     UnconstrainedSolver s(o, p);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
     REQUIRE(r.x[0] == Approx(2.0).margin(1e-3));   // must reach the true minimiser
 }
 
@@ -594,7 +607,8 @@ TEST_CASE("Termination reasons are correctly reported for max iterations and tol
     p.gradient_func = [](const VectorXd& x) -> Eigen::VectorXd { return 2.0 * x; };
 
     UnconstrainedSolver solver(opts, p);
-    Result r = solver.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = solver.solve());
     REQUIRE(!r.summary.converged);
     REQUIRE(r.summary.termination_reason == TerminationReason::MaxIterations);
 }
@@ -658,7 +672,8 @@ TEST_CASE("SQP: quadratic objective with linear equality constraint", "[sqp][equ
 
     auto o = con_opts();
     ConstrainedSolver s(o, p);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
 
     VectorXd expected(2);
     expected << 1.0, 1.0;
@@ -672,7 +687,8 @@ TEST_CASE("SQP: quadratic objective with linear equality constraint", "[sqp][equ
     REQUIRE(r.x.isApprox(expected, 1e-4));
     REQUIRE(r.summary.converged == true);
     REQUIRE(r.summary.termination_reason == TerminationReason::GradientTolerance);
-    
+    REQUIRE(r.lambda.size() == 1);
+    REQUIRE(r.lambda(0) == Approx(1.0).margin(1e-6));   // x*=(1,1): grad_f = A^T*lambda => lambda*=1
 }
 
 TEST_CASE("SQP: quadratic objective with active inequality constraint", "[sqp][inequality]")
@@ -721,7 +737,8 @@ TEST_CASE("SQP: quadratic objective with active inequality constraint", "[sqp][i
 
     auto o = con_opts();
     ConstrainedSolver s(o, p);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
 
     VectorXd expected(2);
     expected << 1.0, 1.0;
@@ -735,6 +752,9 @@ TEST_CASE("SQP: quadratic objective with active inequality constraint", "[sqp][i
     REQUIRE(r.x.isApprox(expected, 1e-5));
     REQUIRE(r.summary.converged == true);
     REQUIRE(r.summary.termination_reason == TerminationReason::GradientTolerance);
+    REQUIRE(r.mhu.size() == 1);
+    REQUIRE(r.mhu(0) == Approx(1.0).margin(1e-3));   // mu = tau/s is only O(tau) accurate
+    REQUIRE(r.mhu(0) >= 0.0);
 }
 
 TEST_CASE("SQP: nonlinear equality constraint circle", "[sqp][nonlinear]")
@@ -778,7 +798,8 @@ TEST_CASE("SQP: nonlinear equality constraint circle", "[sqp][nonlinear]")
 
     auto o = con_opts();
     ConstrainedSolver s(o, p);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
 
     VectorXd expected(2);
     expected << -std::sqrt(2)/2,
@@ -793,6 +814,8 @@ TEST_CASE("SQP: nonlinear equality constraint circle", "[sqp][nonlinear]")
     REQUIRE(r.x.isApprox(expected, 1e-4));
     REQUIRE(r.summary.converged == true);
     REQUIRE(r.summary.termination_reason == TerminationReason::GradientTolerance);
+    REQUIRE(r.lambda.size() == 1);
+    REQUIRE(r.lambda(0) == Approx(-std::sqrt(2.0) / 2.0).margin(1e-4));
 }
 
 TEST_CASE("SQP: nonlinear equality with active inequality", "[sqp][mixed]")
@@ -852,7 +875,8 @@ TEST_CASE("SQP: nonlinear equality with active inequality", "[sqp][mixed]")
 
     auto o = con_opts();
     ConstrainedSolver s(o, p);
-    Result r = s.solve();
+    Result r;
+    REQUIRE_NOTHROW(r = s.solve());
 
     VectorXd expected(2);
     expected << std::sqrt(2)/2,
@@ -867,6 +891,8 @@ TEST_CASE("SQP: nonlinear equality with active inequality", "[sqp][mixed]")
     REQUIRE(r.x.isApprox(expected, 1e-4));
     REQUIRE(r.summary.converged == true);
     REQUIRE(r.summary.termination_reason == TerminationReason::GradientTolerance);
+    REQUIRE(r.lambda(0) == Approx(1.0 - std::sqrt(2.0)).margin(1e-5));
+    REQUIRE(r.mhu(0)    == Approx(0.0).margin(1e-6));
 }
 
 // =============================================================================

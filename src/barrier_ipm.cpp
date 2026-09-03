@@ -51,6 +51,9 @@ namespace furiaopt::details {
         const int max_outer  = options.max_outer;     // Barrier reduction iterations
         const int max_inner  = options.max_inner;     // Newton steps per centering loop
         const double tol     = options.ipm_tol;       // Global convergence threshold
+        const double rho_tol   = 1e-8;                // Primal regularization (damps undetermined primal steps)
+        const double delta_tol = 1e-8;                // Dual regularization (relaxes linearly dependent constraints)
+        const double dx_tol = 1e-14;                  // Step length tolerance for early termination of inner loop
 
         // Allocate the KKT frame once; only the (0,0) and (n,n) blocks change.
         Eigen::MatrixXd KKT = Eigen::MatrixXd::Zero(n + m_eq, n + m_eq);
@@ -89,9 +92,6 @@ namespace furiaopt::details {
                 Eigen::VectorXd s_inv  = s.cwiseInverse();
                 Eigen::VectorXd s_inv2 = s_inv.cwiseAbs2();
 
-                const double rho_tol   = 1e-8;   // Primal regularization (damps undetermined primal steps)
-                const double delta_tol = 1e-8;   // Dual regularization (relaxes linearly dependent constraints)
-
                 // LHS block: H + tau * C^T * diag(s)^-2 * C + rho*I
                 // Regularization keeps the reduced KKT nonsingular even when C is rank deficient in x
                 KKT.block(0, 0, n, n) = tau * C.transpose() * s_inv2.asDiagonal() * C
@@ -108,7 +108,7 @@ namespace furiaopt::details {
                 // 2. RHS residuals
                 Eigen::VectorXd dual_res = -c + A.transpose() * lambda + tau * C.transpose() * s_inv;
                 if (H.has_value()) {
-                    dual_res += H.value() * x;
+                    dual_res -= H.value() * x;
                 }
 
                 Eigen::VectorXd primal_res = -A * x - b;
@@ -144,7 +144,7 @@ namespace furiaopt::details {
                 lambda += alpha * dlambda;
 
                 // Check if step length is too small to continue like done for unconstrained opt problems
-                if (alpha * dx.norm() < tol * std::max(x.norm(), 1e-16)) break;
+                if (alpha * dx.norm() < dx_tol * std::max(x.norm(), 1e-16)) break;
             }
 
             // Barrier parameter is too small, terminate the outer loop
