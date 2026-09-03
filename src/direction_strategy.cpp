@@ -117,6 +117,7 @@ Eigen::MatrixXd BFGSHessianApproximation::getApproximateHessian(const Eigen::Vec
     }
 
     H_k_ = H_k_ + (y * y.transpose()) / (sTy) - (Hs * Hs.transpose()) / sTHs;
+    H_k_ = 0.5*(H_k_ + H_k_.transpose()); 
     x_k_ = x_k_plus_1;
     g_k_ = g_k_plus_1;
     return H_k_;

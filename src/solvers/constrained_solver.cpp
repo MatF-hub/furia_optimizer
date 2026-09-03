@@ -139,8 +139,8 @@ Result ConstrainedSolver::solve(){
     const int num_inequality_constraints = gradient_inequality_constraint_func_ ? gradient_inequality_constraint_func_(x0_).cols() : 0;
     Eigen::VectorXd lambda_i = Eigen::VectorXd::Zero(num_equality_constraints);
     Eigen::VectorXd mhu_i = Eigen::VectorXd::Zero(num_inequality_constraints);
-    Eigen::VectorXd sigma_j = Eigen::VectorXd::Ones(num_equality_constraints);
-    Eigen::VectorXd tau_j = Eigen::VectorXd::Ones(num_inequality_constraints);
+    Eigen::VectorXd sigma_j = Eigen::VectorXd::Zero(num_equality_constraints);
+    Eigen::VectorXd tau_j = Eigen::VectorXd::Zero(num_inequality_constraints);
     Eigen::VectorXd x_i = x0_;
 
     while (iter < options_.get().max_iter) {
