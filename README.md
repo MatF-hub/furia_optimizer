@@ -30,5 +30,14 @@ The fundamental concepts, algorithms, and implementation strategy originate from
 ## Background
 - Constrained Numerical Optimization for Estimation and Control (CNOEC), Lorenzo Fagiano, Politecnico di Milano.
 
+## Examples
+
+### Unconstrained NLP
+The chosen example for NLP problem solving is the classic Rosenbrock problem, comparing Gradient Descent, BFGS, and Exact Newton descent directions from the same random starting point:
+
+$$f(x_0, x_1) = (a - x_0)^2 + b(x_1 - x_0^2)^2, \quad a = 1,\ b = 100$$
+
+![Rosenbrock: Gradient Descent vs BFGS vs Exact Newton](docs/images/rosenbrock.png)
+
 ## License
 This project is licensed under the [MIT License](LICENSE).

@@ -1,14 +1,13 @@
 #include "solvers/unconstrained_solver.hpp"
-#include <iostream>
-
-// The Rosenbrock function itself
-#include <Eigen/Dense>
-#include <cmath>
-#include <random>
-
-// Config loader
 #include "config_loader.hpp"
+#include "example_cli.hpp"
 
+#include <Eigen/Dense>
+#include <chrono>
+#include <cmath>
+#include <iostream>
+#include <random>
+#include <vector>
 
 double rosenbrock(const Eigen::VectorXd& params, const Eigen::VectorXd& x) {
     double a = params[0];
@@ -43,49 +42,52 @@ Eigen::MatrixXd rosenbrock_hessian(const Eigen::VectorXd& params, const Eigen::V
     return hessian;
 }
 
-int main()
+int main(int argc, char** argv)
 {
-    // Setup solver options
-    furiaopt::UnconstrainedSolverOptions options = furiaopt::load_solver_options("config/config.json");
+    auto args = furiaopt::parse_example_args(argc, argv);
 
-    // Constants for the Rosenbrock function A = 1.0, B = 100.0
-    double A_param = 1.0;
-    double B_param = 100.0;
+    furiaopt::UnconstrainedSolverOptions options =
+        furiaopt::load_solver_options(args.config_dir + "/config.json", args.logs_output_dir);
+
     Eigen::VectorXd params(2);
     params << 1.0, 100.0;
 
-    //Setup problem to solve
     furiaopt::NLPProblem problem;
-    problem.cost_func = [params](const Eigen::VectorXd& x) -> double {
-        return rosenbrock(params, x);
+    problem.cost_func     = [params](const Eigen::VectorXd& x) { return rosenbrock(params, x); };
+    problem.gradient_func = [params](const Eigen::VectorXd& x) { return rosenbrock_gradient(params, x); };
+    problem.hessian_func  = [params](const Eigen::VectorXd& x) { return rosenbrock_hessian(params, x); };
+
+    std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
+    std::uniform_real_distribution<double> dist_x(-3.0, 3.0);
+    std::uniform_real_distribution<double> dist_y(-2.0, 4.0);
+    Eigen::VectorXd x0(2);
+    x0 << dist_x(rng), dist_y(rng);
+    problem.x0 = x0;
+    std::cout << "x0=" << x0.transpose() << "\n";
+
+    struct MethodCfg { std::string name; furiaopt::DirectionMethod method; };
+    std::vector<MethodCfg> methods = {
+        {"GradientDescent", furiaopt::DirectionMethod::GradientDescent},
+        {"BFGS",            furiaopt::DirectionMethod::BFGS},
+        {"ExactNewton",     furiaopt::DirectionMethod::ExactNewton},
     };
-    problem.gradient_func = [params](const Eigen::VectorXd& x) -> Eigen::VectorXd {
-        return rosenbrock_gradient(params, x);
-    };
-    problem.hessian_func = [params](const Eigen::VectorXd& x) -> Eigen::MatrixXd {
-        return rosenbrock_hessian(params, x);
-    };
 
-    // Setup the random number generator for random initialziation
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<double> dist_x(-2.0, 2.0);
-    std::uniform_real_distribution<double> dist_y(-1.0, 2.0);
-    Eigen::VectorXd x_init(2);
-    x_init << dist_x(gen), dist_y(gen);
-    problem.x0 = x_init;
+    for (const auto& m : methods) {
+        furiaopt::UnconstrainedSolverOptions opts = options;
+        opts.direction_method = m.method;
+        opts.logger->info("=== METHOD {} ===", m.name);
 
-    //Initialize logger
-    options.logger->info("Application started");
+        furiaopt::UnconstrainedSolver solver(opts, problem);
+        auto t0 = std::chrono::steady_clock::now();
+        furiaopt::Result result = solver.solve();
+        double elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        opts.logger->info("METHOD {} elapsed_ms={:.4f}", m.name, elapsed_ms);
 
-    //Initialize solver and solve the problem
-    furiaopt::UnconstrainedSolver default_solver(options, problem);
-    furiaopt::Result result = default_solver.solve();
-
-    std::cout << "Optimized parameters: " << result.x.transpose() << std::endl;
-    std::cout << "Solver summary: " << std::endl;
-    std::cout << "  Iterations: " << result.summary.iterations << std::endl;
-    std::cout << "  Initial cost: " << result.summary.initial_cost << std::endl;
-    std::cout << "  Final cost: " << result.summary.final_cost << std::endl;
-    std::cout << "  Converged: " << (result.summary.converged ? "Yes" : "No") << std::endl;
+        std::cout << m.name << ": x=" << result.x.transpose()
+                  << " iters=" << result.summary.iterations
+                  << " cost=" << result.summary.final_cost
+                  << " elapsed_ms=" << elapsed_ms
+                  << " converged=" << (result.summary.converged ? "yes" : "no") << "\n";
+    }
+    return 0;
 }

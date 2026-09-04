@@ -9,7 +9,7 @@
   "direction_method": "GradientDescent",
   "globalization_method": "LineSearch",
 
-  "log_file_folder_path": "/home/matteo/optimizer_ws/logs/",
+  "log_file_name": "solver_log.log",
 
   "qp_tau_initial": 1.0,
   "qp_tau_factor": 0.2,

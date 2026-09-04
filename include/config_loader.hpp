@@ -51,12 +51,33 @@ inline GlobalizationMethod parse_globalization_method(
         "Unknown globalization_method: " + s);
 }
 
+inline std::shared_ptr<spdlog::logger> make_file_logger(
+    const std::string& logs_dir, const std::string& log_file_name)
+{
+    if (logs_dir.empty()) {
+        return std::make_shared<spdlog::logger>("null",
+            std::make_shared<spdlog::sinks::null_sink_mt>());
+    }
+    auto logger = spdlog::basic_logger_mt<spdlog::synchronous_factory>(
+        log_file_name, logs_dir + "/" + log_file_name, true);
+    logger->set_level(spdlog::level::info);
+    logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
+    return logger;
+}
+
+inline std::shared_ptr<spdlog::logger> make_config_logger(
+    const json& j, const std::string& logs_dir)
+{
+    return make_file_logger(logs_dir, j.value("log_file_name", std::string("solver_log.log")));
+}
+
 //------------------------------------------
 // Load config file
 //------------------------------------------
 
 inline UnconstrainedSolverOptions load_solver_options(
-    const std::string& filepath)
+    const std::string& filepath,
+    const std::string& logs_dir = "")
 {
     std::ifstream file(filepath);
 
@@ -93,25 +114,14 @@ inline UnconstrainedSolverOptions load_solver_options(
             j.value("globalization_method",
                     "LineSearch"));
 
-    // Create logger based on log_file_folder_path
-    auto log_folder = j.value("log_file_folder_path", std::string("logs/"));
-    if (!log_folder.empty()) {
-        auto file_logger = spdlog::basic_logger_mt<spdlog::synchronous_factory>(
-            "file_logger", log_folder + "/solver.log", true);
-        file_logger->set_level(spdlog::level::info);
-        file_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
-        opt.logger = file_logger;
-    } else {
-        // Use null sink logger
-        opt.logger = std::make_shared<spdlog::logger>("null",
-            std::make_shared<spdlog::sinks::null_sink_mt>());
-    }
+    opt.logger = make_config_logger(j, logs_dir);
 
     return opt;
 }
 
 inline IPMSolverOptions load_ipm_solver_options(
-    const std::string& filepath)
+    const std::string& filepath,
+    const std::string& logs_dir = "")
 {
     std::ifstream file(filepath);
 
@@ -141,25 +151,14 @@ inline IPMSolverOptions load_ipm_solver_options(
     opt.ipm_tol =
         j.value("qp_ipm_tol", 1e-8);
 
-    // Create logger based on log_file_folder_path
-    auto log_folder = j.value("log_file_folder_path", std::string("logs/"));
-    if (!log_folder.empty()) {
-        auto file_logger = spdlog::basic_logger_mt<spdlog::synchronous_factory>(
-            "file_logger", log_folder + "/solver.log", true);
-        file_logger->set_level(spdlog::level::info);
-        file_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
-        opt.logger = file_logger;
-    } else {
-        // Use null sink logger
-        opt.logger = std::make_shared<spdlog::logger>("null",
-            std::make_shared<spdlog::sinks::null_sink_mt>());
-    }
+    opt.logger = make_config_logger(j, logs_dir);
 
     return opt;
 }
 
 inline ConstrainedSolverOptions load_constrained_solver_options(
-    const std::string& filepath)
+    const std::string& filepath,
+    const std::string& logs_dir = "")
 {
     std::ifstream file(filepath);
 
@@ -216,19 +215,7 @@ inline ConstrainedSolverOptions load_constrained_solver_options(
     opt.QP_subproblem_options.ipm_tol =
         j.value("qp_ipm_tol", 1e-8);
 
-    // Create logger based on log_file_folder_path
-    auto log_folder = j.value("log_file_folder_path", std::string("logs/"));
-    if (!log_folder.empty()) {
-        auto file_logger = spdlog::basic_logger_mt<spdlog::synchronous_factory>(
-            "file_logger", log_folder + "/solver.log", true);
-        file_logger->set_level(spdlog::level::info);
-        file_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
-        opt.logger = file_logger;
-    } else {
-        // Use null sink logger
-        opt.logger = std::make_shared<spdlog::logger>("null",
-            std::make_shared<spdlog::sinks::null_sink_mt>());
-    }
+    opt.logger = make_config_logger(j, logs_dir);
 
     return opt;
 }
