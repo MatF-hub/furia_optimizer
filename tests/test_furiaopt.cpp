@@ -7,6 +7,7 @@
 #include "solvers/unconstrained_solver.hpp"
 #include "solvers/qp_solver.hpp"
 #include "solvers/lp_solver.hpp"
+#include "solvers/feasibility.hpp"
 #include "solvers/constrained_solver.hpp"
 #include "direction_strategy.hpp"
 #include "generalization_method.hpp"
@@ -1284,7 +1285,7 @@ TEST_CASE("computeFeasiblePoint returns strictly feasible interior point for box
     VectorXd d(2); d << 1.0, 1.0; // Box constraints x_i + 1 >= 0
 
     IPMSolverOptions opts;
-    VectorXd x_feas = LPSolver::computeFeasiblePoint(c, A, b, C, d, opts);
+    VectorXd x_feas = computeFeasiblePoint(c, A, b, C, d,opts);
 
     VectorXd slack = C * x_feas + d;
 
@@ -1302,7 +1303,7 @@ TEST_CASE("phase-1: bounded box returns a well-centred interior point", "[lp][fe
     VectorXd b = VectorXd::Zero(0);
 
     IPMSolverOptions o = ipm_opts();
-    VectorXd x = LPSolver::computeFeasiblePoint(c, A, b, C, d, o);
+    VectorXd x = computeFeasiblePoint(c, A, b, C, d,o);
     const VectorXd slack = C * x + d;
 
     CAPTURE(x, slack);
@@ -1320,7 +1321,7 @@ TEST_CASE("phase-1: honours equality constraints while staying interior", "[lp][
     VectorXd c = VectorXd::Zero(2);
 
     IPMSolverOptions o = ipm_opts();
-    VectorXd x = LPSolver::computeFeasiblePoint(c, A, b, C, d, o);
+    VectorXd x = computeFeasiblePoint(c, A, b, C, d,o);
 
     CAPTURE(x, (A*x + b).norm(), (C*x + d).minCoeff());
     REQUIRE((A * x + b).norm() < 1e-8);
@@ -1338,7 +1339,7 @@ TEST_CASE("phase-1: touching the boundary is not accepted as interior", "[lp][fe
     VectorXd b = VectorXd::Zero(0);
 
     IPMSolverOptions o = ipm_opts();
-    VectorXd x = LPSolver::computeFeasiblePoint(c, A, b, C, d, o);
+    VectorXd x = computeFeasiblePoint(c, A, b, C, d,o);
 
     CAPTURE(x, (C*x + d).minCoeff());
     REQUIRE((C * x + d).minCoeff() > 1e-6);
@@ -1356,7 +1357,7 @@ TEST_CASE("phase-1: unbounded feasible set does not fling the point to the horiz
     VectorXd b = VectorXd::Zero(0);
 
     IPMSolverOptions o = ipm_opts();
-    VectorXd x = LPSolver::computeFeasiblePoint(c, A, b, C, d, o);
+    VectorXd x = computeFeasiblePoint(c, A, b, C, d,o);
 
     CAPTURE(x, x.norm());
     REQUIRE(x.norm() < 1e3);
@@ -1372,12 +1373,12 @@ TEST_CASE("phase-1: empty interior and infeasible sets are both rejected", "[lp]
     SECTION("empty interior: x0 >= 0 and -x0 >= 0 force x0 == 0") {
         MatrixXd C(2,2); C << 1,0, -1,0;
         VectorXd d(2);   d << 0, 0;
-        REQUIRE_THROWS_AS(LPSolver::computeFeasiblePoint(c, A, b, C, d, o), std::runtime_error);
+        REQUIRE_THROWS_AS(computeFeasiblePoint(c, A, b, C, d,o), std::runtime_error);
     }
     SECTION("infeasible: x0 >= 1 and x0 <= -1") {
         MatrixXd C(2,2); C << 1,0, -1,0;
         VectorXd d(2);   d << -1, -1;
-        REQUIRE_THROWS_AS(LPSolver::computeFeasiblePoint(c, A, b, C, d, o), std::runtime_error);
+        REQUIRE_THROWS_AS(computeFeasiblePoint(c, A, b, C, d,o), std::runtime_error);
     }
 }
 

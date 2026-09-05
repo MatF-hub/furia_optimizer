@@ -22,14 +22,6 @@ public:
     //Solve call
     Result solve();
 
-    static Eigen::VectorXd computeFeasiblePoint(
-    const Eigen::VectorXd& c,
-    const Eigen::MatrixXd& A,
-    const Eigen::VectorXd& b,
-    const Eigen::MatrixXd& C,
-    const Eigen::VectorXd& d,
-    const IPMSolverOptions& options);
-
 private:
     void general_LP_solver(Result& result);
 };

@@ -1,5 +1,5 @@
 #include "solvers/qp_solver.hpp"
-#include "solvers/lp_solver.hpp"
+#include "solvers/feasibility.hpp"
 #include "barrier_ipm.hpp"
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
@@ -33,7 +33,7 @@ Result QPSolver::solve(){
             const Eigen::VectorXd& b = problem_.get().b.value_or(Eigen::VectorXd::Zero(0));
             const Eigen::MatrixXd& C = problem_.get().C.value_or(Eigen::MatrixXd::Zero(0, c.rows()));
             const Eigen::VectorXd& d = problem_.get().d.value_or(Eigen::VectorXd::Zero(0));
-            x_0_ = LPSolver::computeFeasiblePoint(c, A, b, C, d, options_.get());
+            x_0_ = computeFeasiblePoint(c, A, b, C, d, options_.get());
         }
         else
         {

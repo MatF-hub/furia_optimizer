@@ -39,5 +39,14 @@ $$f(x_0, x_1) = (a - x_0)^2 + b(x_1 - x_0^2)^2, \quad a = 1,\ b = 100$$
 
 ![Rosenbrock: Gradient Descent vs BFGS vs Exact Newton](docs/images/rosenbrock.png)
 
+### Constrained QP
+Smooths a 2D path pinned at unevenly-spaced waypoints, confined to a straight corridor around the start-end line:
+
+$$\min_{u}\ \tfrac12\sum_{d\in\{x,y\}}\lVert Du_d\rVert_2^2 \quad\text{s.t.}\quad u_k = p_k\ (k\in\mathcal A), \quad -w_r \le n^\top u_k \le w_\ell\ \ \forall k$$
+
+$D$ is the discrete 2nd-difference operator, $(Du)_i = u_{i-1} - 2u_i + u_{i+1}$, a finite-difference approximation of acceleration at unit time steps; $A=\{0,10,30,49\}$ are the pinned waypoints, $n$ the corridor normal. We don't supply $x_0$: the solver computes its own strictly feasible starting point via an internal phase-1 QP.
+
+![QP trajectory smoothing: corridor-constrained path through uneven waypoints](docs/images/qp_trajectory.png)
+
 ## License
 This project is licensed under the [MIT License](LICENSE).
