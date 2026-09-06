@@ -26,6 +26,20 @@ Eigen::VectorXd rosenbrock_gradient(const Eigen::VectorXd& params, const Eigen::
     return grad;
 }
 
+Eigen::VectorXd rosenbrock_residual(const Eigen::VectorXd& params, const Eigen::VectorXd& x) {
+    Eigen::VectorXd r(2);
+    r << params[0] - x[0], std::sqrt(params[1]) * (x[1] - x[0] * x[0]);
+    return r;
+}
+
+Eigen::MatrixXd rosenbrock_residual_gradient(const Eigen::VectorXd& params, const Eigen::VectorXd& x) {
+    double sb = std::sqrt(params[1]);
+    Eigen::MatrixXd J(2, 2);
+    J << -1.0, -2.0 * sb * x[0],
+          0.0, sb;
+    return J;
+}
+
 Eigen::MatrixXd rosenbrock_hessian(const Eigen::VectorXd& params, const Eigen::VectorXd& x) {
     double b = params[1];
     double x0 = x[0];
@@ -65,6 +79,14 @@ int main(int argc, char** argv)
     problem.x0 = x0;
     std::cout << "x0=" << x0.transpose() << "\n";
 
+    auto report = [](const std::string& name, const furiaopt::Result& result, double elapsed_ms) {
+        std::cout << name << ": x=" << result.x.transpose()
+                  << " iters=" << result.summary.iterations
+                  << " cost=" << result.summary.final_cost
+                  << " elapsed_ms=" << elapsed_ms
+                  << " converged=" << (result.summary.converged ? "yes" : "no") << "\n";
+    };
+
     struct MethodCfg { std::string name; furiaopt::DirectionMethod method; };
     std::vector<MethodCfg> methods = {
         {"GradientDescent", furiaopt::DirectionMethod::GradientDescent},
@@ -83,11 +105,23 @@ int main(int argc, char** argv)
         double elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         opts.logger->info("METHOD {} elapsed_ms={:.4f}", m.name, elapsed_ms);
 
-        std::cout << m.name << ": x=" << result.x.transpose()
-                  << " iters=" << result.summary.iterations
-                  << " cost=" << result.summary.final_cost
-                  << " elapsed_ms=" << elapsed_ms
-                  << " converged=" << (result.summary.converged ? "yes" : "no") << "\n";
+        report(m.name, result, elapsed_ms);
     }
+
+    furiaopt::LSProblem ls_problem;
+    ls_problem.x0 = x0;
+    ls_problem.residual_func = [params](const Eigen::VectorXd& x) { return rosenbrock_residual(params, x); };
+    ls_problem.gradient_residual_func = [params](const Eigen::VectorXd& x) { return rosenbrock_residual_gradient(params, x); };
+
+    furiaopt::UnconstrainedSolverOptions gn_opts = options;
+    gn_opts.logger->info("=== METHOD GaussNewton ===");
+
+    furiaopt::UnconstrainedSolver gn_solver(gn_opts, ls_problem);
+    auto t0 = std::chrono::steady_clock::now();
+    furiaopt::Result gn_result = gn_solver.solve();
+    double gn_elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    gn_opts.logger->info("METHOD GaussNewton elapsed_ms={:.4f}", gn_elapsed_ms);
+
+    report("GaussNewton", gn_result, gn_elapsed_ms);
     return 0;
 }

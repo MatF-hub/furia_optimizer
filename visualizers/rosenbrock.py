@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Parses solver_log.log (written by examples/rosenbrock.cpp) and plots the
-GradientDescent/BFGS/ExactNewton paths on the Rosenbrock surface plus
-cost-vs-iteration."""
+GradientDescent/BFGS/ExactNewton/GaussNewton paths on the Rosenbrock surface
+plus cost-vs-iteration."""
 import argparse
 import os
 import re
@@ -46,9 +46,9 @@ def rosenbrock(x, y, a=1.0, b=100.0):
 
 def plot(methods, out_dir, show):
     fig = plt.figure(figsize=(12, 5))
-    colors = {"GradientDescent": "red", "BFGS": "orange", "ExactNewton": "cyan"}
+    colors = {"GradientDescent": "red", "BFGS": "orange", "ExactNewton": "cyan", "GaussNewton": "purple"}
 
-    linestyles = {"GradientDescent": "-", "BFGS": "--", "ExactNewton": ":"}
+    linestyles = {"GradientDescent": "-", "BFGS": "--", "ExactNewton": ":", "GaussNewton": "-."}
 
     all_x0 = [v for d in methods.values() for v in d["x0"]]
     all_x1 = [v for d in methods.values() for v in d["x1"]]

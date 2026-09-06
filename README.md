@@ -33,11 +33,11 @@ The fundamental concepts, algorithms, and implementation strategy originate from
 ## Examples
 
 ### Unconstrained NLP
-The chosen example for NLP problem solving is the classic Rosenbrock problem, comparing Gradient Descent, BFGS, and Exact Newton descent directions from the same random starting point:
+The chosen example for Unconstrained NLP problem solving is the classic Rosenbrock problem, comparing Gradient Descent, BFGS, Exact Newton and Gauss-Newton all from the same random starting point:
 
 $$f(x_0, x_1) = (a - x_0)^2 + b(x_1 - x_0^2)^2, \quad a = 1,\ b = 100$$
 
-![Rosenbrock: Gradient Descent vs BFGS vs Exact Newton](docs/images/rosenbrock.png)
+![Rosenbrock: Gradient Descent vs BFGS vs Exact Newton vs Gauss-Newton](docs/images/rosenbrock.png)
 
 ### Constrained QP
 Smooths a 2D path pinned at unevenly-spaced waypoints, confined to a straight corridor around the start-end line:
